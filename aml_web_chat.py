@@ -126,24 +126,62 @@ class AMLWebChatBot:
             raise
         
         # Initialize ChromaDB
-        warehouse_path = Path(__file__).parent / "warehouse"
-        chroma_path = warehouse_path / "vectors"
-        
-        self.chroma_client = chromadb.PersistentClient(
-            path=str(chroma_path),
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
+        audit.start_phase("CHROMADB_INIT")
+        try:
+            warehouse_path = Path(__file__).parent / "warehouse"
+            chroma_path = warehouse_path / "vectors"
+            
+            self.chroma_client = chromadb.PersistentClient(
+                path=str(chroma_path),
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True
+                )
             )
-        )
+            audit.end_phase("CHROMADB_INIT", True, f"Path: {chroma_path}")
+        except Exception as e:
+            audit.end_phase("CHROMADB_INIT", False, str(e))
+            raise
         
-        # Load collections - prioritize the comprehensive dictionary metadata
+        # Load collections with dimension validation
+        audit.start_phase("COLLECTION_LOADING")
         collections = self.chroma_client.list_collections()
+        collection_details = []
+        dimension_issues = []
+        
         for collection in collections:
-            coll = self.chroma_client.get_collection(collection.name)
-            if coll.count() > 0:
-                self.collections[collection.name] = coll
-                print(f"📊 Loaded collection '{collection.name}' with {coll.count()} embeddings")
+            try:
+                coll = self.chroma_client.get_collection(collection.name)
+                count = coll.count()
+                
+                if count > 0:
+                    # Check embedding dimension if collection has data
+                    dimension_info = "unknown"
+                    try:
+                        sample = coll.get(limit=1, include=['embeddings'])
+                        if sample['embeddings']:
+                            coll_dimension = len(sample['embeddings'][0])
+                            dimension_info = f"{coll_dimension}D"
+                            
+                            # Check for dimension mismatch
+                            if coll_dimension != self.embedding_dimension:
+                                issue_msg = f"Collection {collection.name}: {coll_dimension}D vs BGE {self.embedding_dimension}D"
+                                dimension_issues.append(issue_msg)
+                                audit_logger.warning(f"⚠️ DIMENSION MISMATCH: {issue_msg}")
+                    except Exception as dim_e:
+                        dimension_info = f"error: {dim_e}"
+                    
+                    self.collections[collection.name] = coll
+                    collection_details.append(f"{collection.name}({count} docs, {dimension_info})")
+                    print(f"📊 Loaded collection '{collection.name}' with {count} embeddings ({dimension_info})")
+                
+            except Exception as e:
+                audit_logger.error(f"❌ Error loading collection {collection.name}: {e}")
+                
+        if dimension_issues:
+            audit.end_phase("COLLECTION_LOADING", False, f"Dimension mismatches: {'; '.join(dimension_issues)}")
+        else:
+            audit.end_phase("COLLECTION_LOADING", True, f"Loaded {len(self.collections)} collections: {', '.join(collection_details)}")
         
         # Prioritize the comprehensive dictionary metadata collection
         if 'aml_dictionary_metadata' in self.collections:
@@ -160,27 +198,43 @@ class AMLWebChatBot:
         
     def semantic_search(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         """Perform semantic search across all collections."""
+        audit = SystemAudit()
+        audit.start_phase("SEMANTIC_SEARCH")
+        
         all_results = []
+        search_details = []
         
         if not self.bge_model or not self.collections:
-            return all_results
+            audit.end_phase("SEMANTIC_SEARCH", False, "Missing model or collections")
+            return []
         
         # Generate BGE embedding for query
-        query_embedding = self.bge_model.encode([query])[0].tolist()
+        audit.start_phase("QUERY_EMBEDDING")
+        try:
+            query_embedding = self.bge_model.encode([query])[0].tolist()
+            audit.end_phase("QUERY_EMBEDDING", True, f"Generated {len(query_embedding)}D embedding")
+        except Exception as e:
+            audit.end_phase("QUERY_EMBEDDING", False, str(e))
+            return []
         
         # Search in all collections
         for collection_name, collection in self.collections.items():
+            collection_audit = SystemAudit()
+            collection_audit.start_phase(f"SEARCH_{collection_name}")
+            
             try:
                 search_results = collection.query(
                     query_embeddings=[query_embedding],
                     n_results=max_results
                 )
                 
+                result_count = 0
                 if search_results['documents'] and search_results['documents'][0]:
+                    result_count = len(search_results['documents'][0])
                     for doc, distance, metadata in zip(
                         search_results['documents'][0],
                         search_results['distances'][0],
-                        search_results['metadatas'][0] or [{}] * len(search_results['documents'][0])
+                        search_results['metadatas'][0] or [{}] * result_count
                     ):
                         similarity = 1.0 - distance
                         all_results.append({
@@ -189,11 +243,20 @@ class AMLWebChatBot:
                             "collection": collection_name,
                             "metadata": metadata or {}
                         })
+                
+                collection_audit.end_phase(f"SEARCH_{collection_name}", True, f"Found {result_count} results")
+                search_details.append(f"{collection_name}:{result_count}")
+                
             except Exception as e:
-                print(f"Error searching {collection_name}: {e}")
+                collection_audit.end_phase(f"SEARCH_{collection_name}", False, str(e))
+                audit_logger.error(f"❌ Error searching {collection_name}: {e}")
+                search_details.append(f"{collection_name}:ERROR")
         
         # Sort by similarity and return top results
-        return sorted(all_results, key=lambda x: x['similarity'], reverse=True)[:max_results]
+        final_results = sorted(all_results, key=lambda x: x['similarity'], reverse=True)[:max_results]
+        audit.end_phase("SEMANTIC_SEARCH", True, f"Collections searched: {', '.join(search_details)}, Final results: {len(final_results)}")
+        
+        return final_results
     
     def build_context(self, query: str, max_results: int = 5) -> str:
         """Build detailed context from semantic search results."""
@@ -234,9 +297,13 @@ class AMLWebChatBot:
     
     def generate_response(self, query: str, context: str) -> str:
         """Generate LLM response with context."""
+        audit = SystemAudit()
+        audit.start_phase("LLM_RESPONSE_GENERATION")
+        
         providers = get_available_providers()
         
         if not providers:
+            audit.end_phase("LLM_RESPONSE_GENERATION", False, "No LLM providers available")
             return self._generate_fallback_response(query, context)
         
         # Build comprehensive prompt for LLM
@@ -265,38 +332,43 @@ EXPERT RESPONSE:"""
             response = None
             
             # Debug: Check LLM manager availability
-            print(f"🤖 LLM Manager available: {self.llm_manager is not None}")
+            audit_logger.info(f"🤖 LLM Manager available: {self.llm_manager is not None}")
             if self.llm_manager:
-                print(f"🔧 Available providers: {get_available_providers()}")
+                audit_logger.info(f"🔧 Available providers: {get_available_providers()}")
             
             # Try using LLM manager chat method
             if self.llm_manager:
+                audit.start_phase("LLM_MANAGER_REQUEST")
                 try:
                     messages = [{"role": "user", "content": prompt}]
-                    print("📤 Sending request to LLM...")
+                    audit_logger.info("📤 Sending request to LLM...")
                     llm_response = self.llm_manager.chat(messages)
                     
                     # Extract content from LLMResponse object
                     if hasattr(llm_response, 'content'):
                         response = llm_response.content
-                        print(f"📥 LLM Response received: {len(response)} characters")
+                        audit.end_phase("LLM_MANAGER_REQUEST", True, f"Response length: {len(response)} chars")
+                        audit_logger.info(f"📥 LLM Response received: {len(response)} characters")
                     else:
                         response = str(llm_response)
-                        print(f"📥 LLM Response (string): {len(response)} characters")
+                        audit.end_phase("LLM_MANAGER_REQUEST", True, f"String response: {len(response)} chars")
+                        audit_logger.info(f"📥 LLM Response (string): {len(response)} characters")
                         
                 except Exception as llm_error:
-                    print(f"❌ LLM Manager error: {llm_error}")
+                    audit.end_phase("LLM_MANAGER_REQUEST", False, str(llm_error))
+                    audit_logger.error(f"❌ LLM Manager error: {llm_error}")
                     response = None
             
             # Fallback to direct Cohere if LLM manager fails
             if not response:
-                print("🔄 Trying direct Cohere Chat API fallback...")
+                audit.start_phase("COHERE_FALLBACK")
+                audit_logger.info("🔄 Trying direct Cohere Chat API fallback...")
                 try:
                     import cohere
                     import os
                     
                     api_key = os.getenv("COHERE_API_KEY")
-                    print(f"🔑 Cohere API key available: {api_key is not None}")
+                    audit_logger.info(f"🔑 Cohere API key available: {api_key is not None}")
                     if api_key:
                         co = cohere.Client(api_key)
                         chat_response = co.chat(
@@ -306,16 +378,26 @@ EXPERT RESPONSE:"""
                             temperature=0.7
                         )
                         response = chat_response.text
-                        print(f"✅ Direct Cohere Chat response: {len(response)} characters")
+                        audit.end_phase("COHERE_FALLBACK", True, f"Response length: {len(response)} chars")
+                        audit_logger.info(f"✅ Direct Cohere Chat response: {len(response)} characters")
                     else:
+                        audit.end_phase("COHERE_FALLBACK", False, "No API key")
                         response = None
                 except Exception as cohere_error:
-                    print(f"❌ Cohere error: {cohere_error}")
+                    audit.end_phase("COHERE_FALLBACK", False, str(cohere_error))
+                    audit_logger.error(f"❌ Cohere error: {cohere_error}")
                     response = None
             
-            return response if response else self._generate_fallback_response(query, context)
+            if response:
+                audit.end_phase("LLM_RESPONSE_GENERATION", True, f"Final response: {len(response)} chars")
+                return response
+            else:
+                audit.end_phase("LLM_RESPONSE_GENERATION", False, "All LLM methods failed")
+                return self._generate_fallback_response(query, context)
+                
         except Exception as e:
-            print(f"Error generating LLM response: {e}")
+            audit.end_phase("LLM_RESPONSE_GENERATION", False, str(e))
+            audit_logger.error(f"Error generating LLM response: {e}")
             return self._generate_fallback_response(query, context)
     
     def _generate_fallback_response(self, query: str, context: str) -> str:
