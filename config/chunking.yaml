@@ -1,0 +1,10 @@
+code:
+  mode: "ast"
+  include_docstrings: true
+  context_lines: 8
+  max_tokens_per_chunk: 600
+
+text:
+  max_tokens_per_chunk: 900
+  overlap_tokens: 120
+  preserve_headings: true

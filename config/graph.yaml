@@ -1,0 +1,22 @@
+neo4j:
+  connection_acquisition_timeout: 60
+  database: neo4j
+  max_connection_lifetime: 3600
+  max_connection_pool_size: 50
+  password: production_password
+  uri: neo4j://localhost:7687
+  user: neo4j
+search:
+  comments_boost: 1.0
+  default_limit: 20
+  description_boost: 1.5
+  graph_weight: 0.3
+  name_boost: 2.0
+  semantic_weight: 0.7
+settings:
+  batch_size: 2000
+  connection_timeout: 30
+  max_path_depth: 5
+  max_related_entities: 100
+  max_retry_attempts: 3
+  neighborhood_radius: 2

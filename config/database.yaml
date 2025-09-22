@@ -1,0 +1,72 @@
+# Database Configuration for PIO-AI Oracle Metadata Support
+oracle:
+  # Connection Details (from your Oracle client)
+  dsn: "192.168.30.43:1521/OPENBI2"
+  user: "BI_DWH"
+  password: "BI_DWH"  # Your actual password
+  
+  # Individual connection components (for reference)
+  # host: "192.168.30.43"
+  # port: 1521
+  # service_name: "OPENBI2"
+  
+  use_dba_views: true
+  pool_min: 1
+  pool_max: 4
+  stmt_cache: 50
+  fetch_arraysize: 1000
+  connect_timeout: 30
+  query_timeout: 300
+  retry_attempts: 3
+  retry_backoff_factor: 2
+  circuit_breaker_failure_threshold: 5
+  circuit_breaker_reset_timeout: 60
+
+# AML Domain Configuration
+aml:
+  owners:
+    - "AML"
+    - "PIO_AML"
+    - "BI_DWH"
+  name_patterns:
+    - "PIO_AML_%"
+    - "AML_%"
+    - "%_AML"
+  exclude_patterns:
+    - "%_TEMP"
+    - "%_BAK"
+    - "%_OLD"
+
+# Catalog Storage Configuration
+catalog:
+  path: "warehouse/catalog.db"
+  backup_retention_days: 30
+  chunk_size: 1000
+  index_batch_size: 100
+
+# Relationship Graphs Configuration
+graphs:
+  export_dir: "warehouse/graphs"
+  build_relationship_graph: true
+  max_path_length: 5
+  cardinality_sample_size: 10000
+  quality_thresholds:
+    excellent: 0.9
+    good: 0.7
+    fair: 0.5
+
+# Logging Configuration
+logging:
+  db_operations: true
+  performance_metrics: true
+  circuit_breaker_events: true
+  retention_days: 90
+
+# Security Configuration
+security:
+  pii_detection: true
+  sensitive_table_patterns:
+    - "%_PII_%"
+    - "%_SENSITIVE_%"
+    - "%_CONFIDENTIAL_%"
+  redaction_enabled: true

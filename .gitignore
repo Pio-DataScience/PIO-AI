@@ -1,0 +1,4 @@
+indexes/
+.venv/
+config/.env
+logs/

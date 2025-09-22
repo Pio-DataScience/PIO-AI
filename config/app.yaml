@@ -1,0 +1,23 @@
+paths:
+  root: "C:/Users/anas.aburaya/.vscode/WorkSpace/PIO-AI"
+  warehouse: "C:/Users/anas.aburaya/.vscode/WorkSpace/PIO-AI/warehouse"
+  indexes: "C:/Users/anas.aburaya/.vscode/WorkSpace/PIO-AI/indexes"
+  logs: "C:/Users/anas.aburaya/.vscode/WorkSpace/PIO-AI/logs"
+
+models:
+  # Embeddings can also be provider-agnostic later; for now we focus on LLM
+  llm_provider: "openai"        # options: openai | azure_openai | local
+  llm_model: "gpt-4o-mini"      # small-credit friendly; change as you like
+  # local model name to be used later (kept for future switch)
+  local_llm: "qwen2.5-7b-instruct-q4_k_m"
+
+retrieval:
+  top_k_bm25: 30
+  top_k_vec: 30
+  mix_weight_vec: 0.55
+  mix_weight_bm25: 0.45
+  expand_graph_hops: 1
+
+security:
+  strip_secrets: true
+  obey_exclude_globs: true
