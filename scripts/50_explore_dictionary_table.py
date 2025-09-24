@@ -1,12 +1,14 @@
 """
-Script to explore and sample the BI_DWH.PIO_BANKBI_DICTIONARY_COL_DWH table
-This table contains comprehensive metadata for all database tables and columns.
+Script to export the COMPLETE BI_DWH.PIO_BANKBI_DICTIONARY_COL_DWH table.
+Exports ALL tables and columns (no sampling limits) directly to Parquet format.
+This replaces the old CSV workflow with high-performance Parquet export.
 """
 
 import os
 import sys
 import pandas as pd
 from pathlib import Path
+import oracledb
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -116,8 +118,8 @@ def explore_dictionary_table():
             print(f"\n✅ Sample AML-specific columns:")
             print(aml_df.to_string(index=False))
         
-        # Save full data to CSV for analysis
-        print("\n💾 Saving full dictionary data to CSV...")
+        # Save full data directly to Parquet for high performance
+        print("\n💾 Saving COMPLETE dictionary data to Parquet...")
         
         full_query = """
         SELECT *
@@ -128,14 +130,18 @@ def explore_dictionary_table():
         full_df = harvester.execute_query(full_query)
         
         if not full_df.empty:
-            output_file = project_root / "warehouse" / "dictionary_table_full.csv"
-            full_df.to_csv(output_file, index=False)
-            print(f"✅ Saved {len(full_df)} records to: {output_file}")
+            # Save complete dataset as Parquet (no CSV files)
+            output_file = project_root / "warehouse" / "dictionary_data.parquet"
+            full_df.to_parquet(output_file, compression='snappy', index=False)
+            print(f"✅ Saved COMPLETE {len(full_df)} records to: {output_file}")
+            print(f"📊 Tables: {full_df['TABLE_NAME'].nunique()}")
+            print(f"📊 Total Columns: {len(full_df)}")
+            print(f"📊 AML Columns: {(full_df['MANDATORY_AML_Y_N'] == 'Y').sum()}")
             
-            # Also save just AML columns
+            # Also save just AML columns as separate parquet
             aml_full_df = full_df[full_df['MANDATORY_AML_Y_N'] == 'Y']
-            aml_output_file = project_root / "warehouse" / "dictionary_table_aml_only.csv"
-            aml_full_df.to_csv(aml_output_file, index=False)
+            aml_output_file = project_root / "warehouse" / "dictionary_aml_only.parquet"
+            aml_full_df.to_parquet(aml_output_file, compression='snappy', index=False)
             print(f"✅ Saved {len(aml_full_df)} AML records to: {aml_output_file}")
             
         return full_df
@@ -178,15 +184,16 @@ def analyze_table_coverage(df):
         print(aml_tables.to_string())
 
 if __name__ == "__main__":
-    print("🚀 Starting dictionary table exploration...")
+    print("🚀 Starting COMPLETE dictionary table export...")
     df = explore_dictionary_table()
     
     if df is not None:
         analyze_table_coverage(df)
-        print("\n✅ Dictionary table exploration completed!")
+        print("\n✅ COMPLETE dictionary table export completed!")
         print("\nNext steps:")
-        print("1. Review the saved CSV files in warehouse/")
-        print("2. Use this data to build comprehensive embeddings")
-        print("3. Include column descriptions, data types, and AML flags in embeddings")
+        print("1. Review dictionary_data.parquet in warehouse/ (COMPLETE dataset)")
+        print("2. Run: python scripts/57_memory_efficient_embeddings.py")
+        print("3. This will create embeddings for ALL tables and columns (not sample)")
+        print(f"4. Total data: {len(df):,} records from {df['TABLE_NAME'].nunique()} tables")
     else:
-        print("\n❌ Failed to explore dictionary table")
+        print("\n❌ Failed to export complete dictionary table")

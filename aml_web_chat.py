@@ -1,49 +1,112 @@
 
 """
-Web Chat Interface for AML Database with BGE Semantic Search
+Web Chat Interface for AML Database with Production Agentic RAG System
+Enhanced with structured observability, performance optimization, and agentic behavior.
 """
 
 import sys
 import os
+import uuid
+import uvicorn
+import chromadb
 from pathlib import Path
-import json
-from typing import List, Dict, Any
+import traceback
+import time
+import logging
+from typing import List, Dict, Any, Optional
 from datetime import datetime
+import asyncio
 
 # Add package to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import HTMLResponse, JSONResponse
     from pydantic import BaseModel
     import chromadb
     from chromadb.config import Settings
     from sentence_transformers import SentenceTransformer
+    
+    # Core services
     from services.llm.provider import get_available_providers, llm_manager
     from services.db.catalog_store import CatalogStore
-    print("✅ Required packages imported successfully")
+    
+    # Enhanced production services
+    from services.observability import (
+        ObservabilityManager, ComponentType, StructuredLogger
+    )
+    from services.performance import PerformanceOptimizer
+    from services.agents import (
+        AgentOrchestrator, LANGGRAPH_AVAILABLE
+    )
+    # Modern agentic components
+    from services.agents.modern_orchestrator import ModernAgentOrchestrator
+    from services.agents.observability import get_observability
+    from services.storage.parquet_layer import ParquetDataLayer
+    from services.ingest.dictionary_ingester import DictionaryIngester
+    
+    print("✅ Production-ready packages imported successfully")
+    print(f"✅ LangGraph Agent Support: {LANGGRAPH_AVAILABLE}")
+    
 except ImportError as e:
     print(f"❌ Import error: {e}")
-    sys.exit(1)
+    print("📝 Some production features may be unavailable")
+    # Fallback for basic functionality
+    from fastapi import FastAPI, HTTPException, Request
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import HTMLResponse, JSONResponse
+    from pydantic import BaseModel
 
-# Pydantic models
+# Enhanced Pydantic models
 class ChatMessage(BaseModel):
     message: str
     max_results: int = 5
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
     search_results: List[Dict[str, Any]]
     timestamp: str
     processing_time: float
+    session_id: str
+    turn_id: str
+    query_type: str
+    tools_used: List[str]
+    confidence_score: float
 
-# Initialize FastAPI app
+class SystemStatus(BaseModel):
+    status: str
+    timestamp: str
+    components: Dict[str, str]
+    performance_stats: Dict[str, Any]
+    agent_available: bool
+    storage_layer: str
+
+# Initialize chatbot on startup using lifespan
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global chatbot
+    # Create without auto-initialization to avoid double initialization
+    chatbot = AMLWebChatBot(auto_initialize=False)
+    chatbot.initialize()
+    yield
+    # Shutdown (if needed)
+    pass
+
+# Initialize FastAPI app with enhanced configuration
 app = FastAPI(
-    title="AML Database Chat API",
-    description="Chat interface for AML database with BGE semantic search",
-    version="1.0.0"
+    title="PIO AI - Production Agentic RAG System",
+    description="Production-ready agentic company assistant with comprehensive observability",
+    version="2.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    lifespan=lifespan
 )
 
 # Configure detailed audit logging
@@ -90,14 +153,23 @@ class SystemAudit:
         }
 
 class AMLWebChatBot:
-    """Web-based chat interface for AML database."""
+    """Production-ready web-based chat interface with agentic behavior."""
     
-    def __init__(self):
+    def __init__(self, auto_initialize: bool = True):
         self.bge_model = None
         self.chroma_client = None
         self.catalog_store = None
         self.collections = {}
         self.embedding_dimension = None
+        
+        # Production components
+        self.observability = None
+        self.performance_optimizer = None
+        self.agent_orchestrator = None
+        self.modern_orchestrator = None  # Explicitly initialize to None
+        self.parquet_layer = None
+        self.dictionary_ingester = None
+        self.logger = None
         
         # Initialize LLM manager safely
         try:
@@ -108,25 +180,80 @@ class AMLWebChatBot:
             print(f"⚠️ LLM Manager initialization failed: {e}")
             self.llm_manager = None
         
-    def initialize(self):
-        """Initialize all components."""
-        audit = SystemAudit()
-        print("🤖 Initializing AML Web Chat Bot...")
+        self.audit = SystemAudit()
         
-        # Initialize BGE model
-        audit.start_phase("BGE_MODEL_LOADING")
+        # Auto-initialize if requested (default: True)
+        if auto_initialize:
+            try:
+                self.initialize()
+            except Exception as e:
+                print(f"Auto-initialization failed: {e}")
+                print("System will run with limited functionality")
+    
+    def _initialize_production_components(self):
+        """Initialize production-ready components."""
         try:
-            print("🧠 Loading BGE-large-en-v1.5 model...")
+            # Initialize observability
+            self.audit.start_phase("OBSERVABILITY_INIT")
+            base_path = Path(__file__).parent / "data" / "observability"
+            self.observability = ObservabilityManager(
+                base_path=base_path,
+                enable_tracing=True,
+                enable_metrics=True
+            )
+            self.logger = self.observability.get_logger(ComponentType.API)
+            self.audit.end_phase("OBSERVABILITY_INIT", True, "Structured logging enabled")
+            
+            # Initialize performance optimizer
+            self.audit.start_phase("PERFORMANCE_INIT")
+            cache_config = {
+                "use_redis": False,  # Start with memory cache
+                "memory_cache_size": 10000,
+                "default_ttl": 3600
+            }
+            self.performance_optimizer = PerformanceOptimizer(cache_config=cache_config)
+            self.audit.end_phase("PERFORMANCE_INIT", True, "Cache and optimization enabled")
+            
+            # Initialize storage layer
+            self.audit.start_phase("STORAGE_LAYER_INIT")
+            data_path = Path(__file__).parent / "data" / "parquet"
+            self.parquet_layer = ParquetDataLayer(base_path=data_path)
+            self.audit.end_phase("STORAGE_LAYER_INIT", True, "Parquet storage layer ready")
+            
+            print("Production components initialized successfully")
+            
+        except Exception as e:
+            print(f"Production components initialization partially failed: {e}")
+            # Continue with basic functionality
+        
+    def initialize(self):
+        """Initialize all components with production enhancements."""
+        print("Initializing Production Agentic RAG System...")
+        
+        # Initialize production components first
+        self._initialize_production_components()
+        
+        # Initialize BGE model with performance tracking
+        self.audit.start_phase("BGE_MODEL_LOADING")
+        try:
+            print("Loading BGE-large-en-v1.5 model...")
             self.bge_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
             self.embedding_dimension = self.bge_model.get_sentence_embedding_dimension()
-            audit.end_phase("BGE_MODEL_LOADING", True, f"Dimension: {self.embedding_dimension}")
-            print(f"✅ BGE model loaded (dimension: {self.embedding_dimension})")
+            self.audit.end_phase("BGE_MODEL_LOADING", True, f"Dimension: {self.embedding_dimension}")
+            
+            if self.logger:
+                self.logger.info("bge_model_load", f"BGE model loaded successfully", 
+                               metadata={"dimension": self.embedding_dimension})
+            print(f"BGE model loaded (dimension: {self.embedding_dimension})")
+            
         except Exception as e:
-            audit.end_phase("BGE_MODEL_LOADING", False, str(e))
+            self.audit.end_phase("BGE_MODEL_LOADING", False, str(e))
+            if self.logger:
+                self.logger.error("bge_model_load", f"BGE model loading failed: {e}")
             raise
         
-        # Initialize ChromaDB
-        audit.start_phase("CHROMADB_INIT")
+        # Initialize ChromaDB with enhanced error handling
+        self.audit.start_phase("CHROMADB_INIT")
         try:
             warehouse_path = Path(__file__).parent / "warehouse"
             chroma_path = warehouse_path / "vectors"
@@ -138,13 +265,13 @@ class AMLWebChatBot:
                     allow_reset=True
                 )
             )
-            audit.end_phase("CHROMADB_INIT", True, f"Path: {chroma_path}")
+            self.audit.end_phase("CHROMADB_INIT", True, f"Path: {chroma_path}")
         except Exception as e:
-            audit.end_phase("CHROMADB_INIT", False, str(e))
+            self.audit.end_phase("CHROMADB_INIT", False, str(e))
             raise
         
         # Load collections with dimension validation
-        audit.start_phase("COLLECTION_LOADING")
+        self.audit.start_phase("COLLECTION_LOADING")
         collections = self.chroma_client.list_collections()
         collection_details = []
         dimension_issues = []
@@ -173,19 +300,105 @@ class AMLWebChatBot:
                     
                     self.collections[collection.name] = coll
                     collection_details.append(f"{collection.name}({count} docs, {dimension_info})")
-                    print(f"📊 Loaded collection '{collection.name}' with {count} embeddings ({dimension_info})")
+                    print(f"Loaded collection '{collection.name}' with {count} embeddings ({dimension_info})")
                 
             except Exception as e:
-                audit_logger.error(f"❌ Error loading collection {collection.name}: {e}")
+                audit_logger.error(f"Error loading collection {collection.name}: {e}")
                 
         if dimension_issues:
-            audit.end_phase("COLLECTION_LOADING", False, f"Dimension mismatches: {'; '.join(dimension_issues)}")
+            self.audit.end_phase("COLLECTION_LOADING", False, f"Dimension mismatches: {'; '.join(dimension_issues)}")
+            print("\nCRITICAL: Dimension mismatches detected!")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            for issue in dimension_issues:
+                print(f"{issue}")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("\n🔧 SOLUTION: Run the dimension fix script:")
+            print("   .venv\\Scripts\\python.exe scripts\\53_fix_embedding_dimensions.py")
+            print("\nWARNING: Semantic search will fail until dimensions are aligned!")
         else:
-            audit.end_phase("COLLECTION_LOADING", True, f"Loaded {len(self.collections)} collections: {', '.join(collection_details)}")
+            self.audit.end_phase("COLLECTION_LOADING", True, f"Loaded {len(self.collections)} collections: {', '.join(collection_details)}")
+            print("\n All collections have compatible embedding dimensions!")
         
-        # Prioritize the comprehensive dictionary metadata collection
-        if 'aml_dictionary_metadata' in self.collections:
-            print("🎯 Using comprehensive dictionary metadata as primary source")
+        # Add detailed system diagnostics
+        self.audit.start_phase("SYSTEM_DIAGNOSTICS")
+        print("\n📊 System Diagnostics Summary:")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print(f"🧠 BGE Model: {self.embedding_dimension}D embeddings")
+        print(f"📚 Collections: {len(self.collections)} loaded")
+        for name, details in zip(self.collections.keys(), collection_details):
+            print(f"   • {details}")
+        print(f"🔍 Semantic Search: {'✅ Ready' if not dimension_issues else '❌ BLOCKED by dimension mismatch'}")
+        print(f"🤖 LLM Provider: {'✅ Available' if self.llm_manager else '❌ Not available'}")
+        
+        # Production components status
+        if hasattr(self, 'observability') and self.observability:
+            print(f"📊 Observability: ✅ Enabled")
+        if hasattr(self, 'performance_optimizer') and self.performance_optimizer:
+            print(f"⚡ Performance Optimization: ✅ Enabled")
+        if hasattr(self, 'parquet_layer') and self.parquet_layer:
+            print(f"💾 Parquet Storage: ✅ Ready")
+        
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        self.audit.end_phase("SYSTEM_DIAGNOSTICS", True, f"Collections: {len(self.collections)}, Dimension issues: {len(dimension_issues)}")
+        
+        # Initialize modern agentic orchestrator
+        if LANGGRAPH_AVAILABLE and self.performance_optimizer:
+            self.audit.start_phase("AGENT_INIT")
+            try:
+                # Set up observability
+                logger, tracer = get_observability()
+                
+                # Configure modern orchestrator
+                modern_config = {
+                    "llm": {
+                        "provider": "cohere",  # Use available provider
+                        "model": "command-r-08-2024",
+                        "temperature": 0.1
+                    },
+                    "memory_path": "memory/sessions",
+                    "schema_db_path": "indexes/graph/AI_AML.sqlite",
+                    "db_config": self._get_oracle_config() or {}
+                }
+                
+                # Initialize modern orchestrator
+                try:
+                    self.modern_orchestrator = ModernAgentOrchestrator(modern_config)
+                    print("✅ Modern orchestrator initialized successfully")
+                except Exception as orchestrator_error:
+                    print(f"❌ Modern orchestrator failed: {orchestrator_error}")
+                    print(f"🔧 Orchestrator traceback: {traceback.format_exc()}")
+                    self.modern_orchestrator = None
+                
+                # Keep legacy orchestrator as fallback
+                oracle_config = self._get_oracle_config()
+                if oracle_config:
+                    self.agent_orchestrator = AgentOrchestrator(
+                        retriever=self,  # Use self as retriever
+                        llm_provider=self.llm_manager,
+                        oracle_dsn=oracle_config['dsn'],
+                        oracle_user=oracle_config['user'],
+                        oracle_password=oracle_config['password']
+                    )
+                
+                print("🚀 Modern agentic orchestrator initialized")
+                print("🤖 Legacy agent orchestrator available as fallback")
+                self.audit.end_phase("AGENT_INIT", True, "Modern orchestrator ready")
+                
+            except Exception as e:
+                print(f"⚠️ Modern agent initialization failed: {e}")
+                print(f"🔧 Traceback: {traceback.format_exc()}")
+                self.audit.end_phase("AGENT_INIT", False, str(e))
+                # Fallback to legacy if available
+                self.modern_orchestrator = None
+        
+        # Prioritize the BGE-compatible dictionary metadata collection
+        if 'aml_dictionary_metadata_bge' in self.collections:
+            print("🎯 Using BGE-compatible dictionary metadata as primary source")
+            # Move it to the front for priority searching
+            primary_collection = self.collections.pop('aml_dictionary_metadata_bge')
+            self.collections = {'aml_dictionary_metadata_bge': primary_collection, **self.collections}
+        elif 'aml_dictionary_metadata' in self.collections:
+            print("⚠️ Using legacy dictionary metadata (dimension mismatch expected)")
             # Move it to the front for priority searching
             primary_collection = self.collections.pop('aml_dictionary_metadata')
             self.collections = {'aml_dictionary_metadata': primary_collection, **self.collections}
@@ -194,34 +407,90 @@ class AMLWebChatBot:
         catalog_db_path = warehouse_path / "catalog.db"
         self.catalog_store = CatalogStore(str(catalog_db_path))
         
-        print("✅ AML Web Chat Bot initialized successfully!")
+        print("✅ Production Agentic RAG System initialized successfully!")
+    
+    def _get_oracle_config(self) -> Optional[Dict[str, str]]:
+        """Get Oracle database configuration from environment or config files."""
+        try:
+            # Try environment variables first
+            import os
+            oracle_dsn = os.getenv("ORACLE_DSN")
+            oracle_user = os.getenv("ORACLE_USER") 
+            oracle_password = os.getenv("ORACLE_PASSWORD")
+            
+            if all([oracle_dsn, oracle_user, oracle_password]):
+                return {
+                    "dsn": oracle_dsn,
+                    "user": oracle_user,
+                    "password": oracle_password
+                }
+            
+            # Try config file
+            config_path = Path(__file__).parent / "config" / "secrets.env"
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    for line in f:
+                        if line.strip() and not line.startswith('#'):
+                            key, value = line.strip().split('=', 1)
+                            os.environ[key] = value.strip('"')
+                
+                oracle_dsn = os.getenv("ORACLE_DSN")
+                oracle_user = os.getenv("ORACLE_USER")
+                oracle_password = os.getenv("ORACLE_PASSWORD")
+                
+                if all([oracle_dsn, oracle_user, oracle_password]):
+                    return {
+                        "dsn": oracle_dsn,
+                        "user": oracle_user,
+                        "password": oracle_password
+                    }
+            
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ Failed to load Oracle config: {e}")
+            return None
         
     def semantic_search(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
-        """Perform semantic search across all collections."""
-        audit = SystemAudit()
-        audit.start_phase("SEMANTIC_SEARCH")
-        
+        """Perform semantic search across all collections with performance tracking."""
+        if self.logger:
+            with self.logger.trace_operation("semantic_search", metadata={"query": query[:50], "max_results": max_results}) as perf:
+                return self._perform_semantic_search(query, max_results, perf)
+        else:
+            return self._perform_semantic_search(query, max_results)
+    
+    def _perform_semantic_search(self, query: str, max_results: int = 5, perf=None) -> List[Dict[str, Any]]:
+        """Internal semantic search implementation."""
         all_results = []
         search_details = []
         
         if not self.bge_model or not self.collections:
-            audit.end_phase("SEMANTIC_SEARCH", False, "Missing model or collections")
+            if self.logger:
+                self.logger.warning("semantic_search", "Missing model or collections")
             return []
         
-        # Generate BGE embedding for query
-        audit.start_phase("QUERY_EMBEDDING")
-        try:
-            query_embedding = self.bge_model.encode([query])[0].tolist()
-            audit.end_phase("QUERY_EMBEDDING", True, f"Generated {len(query_embedding)}D embedding")
-        except Exception as e:
-            audit.end_phase("QUERY_EMBEDDING", False, str(e))
-            return []
+        # Generate BGE embedding for query with caching
+        cache_manager = self.performance_optimizer.get_cache_manager() if self.performance_optimizer else None
+        cache_key = f"embedding:{hash(query)}"
+        
+        query_embedding = None
+        if cache_manager:
+            query_embedding = cache_manager.get(cache_key)
+        
+        if query_embedding is None:
+            try:
+                query_embedding = self.bge_model.encode([query])[0].tolist()
+                if cache_manager:
+                    cache_manager.set(cache_key, query_embedding, ttl=1800)  # Cache for 30 minutes
+                if perf:
+                    perf.checkpoint("embedding_generated")
+            except Exception as e:
+                if self.logger:
+                    self.logger.error("embedding_generation", f"Failed to generate embedding: {e}")
+                return []
         
         # Search in all collections
         for collection_name, collection in self.collections.items():
-            collection_audit = SystemAudit()
-            collection_audit.start_phase(f"SEARCH_{collection_name}")
-            
             try:
                 search_results = collection.query(
                     query_embeddings=[query_embedding],
@@ -244,19 +513,247 @@ class AMLWebChatBot:
                             "metadata": metadata or {}
                         })
                 
-                collection_audit.end_phase(f"SEARCH_{collection_name}", True, f"Found {result_count} results")
                 search_details.append(f"{collection_name}:{result_count}")
                 
+                if perf:
+                    perf.checkpoint(f"searched_{collection_name}")
+                
             except Exception as e:
-                collection_audit.end_phase(f"SEARCH_{collection_name}", False, str(e))
-                audit_logger.error(f"❌ Error searching {collection_name}: {e}")
+                if self.logger:
+                    self.logger.error("collection_search", f"Error searching {collection_name}: {e}")
                 search_details.append(f"{collection_name}:ERROR")
         
         # Sort by similarity and return top results
         final_results = sorted(all_results, key=lambda x: x['similarity'], reverse=True)[:max_results]
-        audit.end_phase("SEMANTIC_SEARCH", True, f"Collections searched: {', '.join(search_details)}, Final results: {len(final_results)}")
+        
+        if self.logger:
+            self.logger.info("semantic_search", f"Search completed",
+                           metadata={"collections_searched": len(search_details), "final_results": len(final_results)})
         
         return final_results
+    
+    async def process_chat_message(self, message: str, session_id: str = None, user_id: str = None) -> Dict[str, Any]:
+        """Process chat message with modern agentic orchestrator."""
+        start_time = time.time()
+        session_id = session_id or str(uuid.uuid4())
+        turn_id = str(uuid.uuid4())
+        
+        try:
+            # DEBUG: Check what orchestrators are available
+            has_modern = hasattr(self, 'modern_orchestrator') and self.modern_orchestrator
+            has_legacy = hasattr(self, 'agent_orchestrator') and self.agent_orchestrator
+            print(f"DEBUG - Modern orchestrator available: {has_modern}")
+            print(f"DEBUG - Legacy orchestrator available: {has_legacy}")
+            
+            # Prioritize modern orchestrator
+            if has_modern:
+                print("Using modern agentic orchestrator")
+                if self.logger:
+                    self.logger.info("chat_processing", "Using modern agentic orchestrator", 
+                                   session_id=session_id, turn_id=turn_id)
+                
+                # Set observability context
+                logger, tracer = get_observability()
+                logger.set_trace_context(turn_id, session_id)
+                
+                response = await self.modern_orchestrator.process_query(
+                    query=message,
+                    session_id=session_id
+                )
+                
+                processing_time = (time.time() - start_time) * 1000
+                
+                return ChatResponse(
+                    response=response.get("response", "I couldn't process your query."),
+                    search_results=[],  # Modern orchestrator handles internally
+                    timestamp=datetime.utcnow().isoformat(),
+                    processing_time=processing_time,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    query_type=response.get("intent", "general"),
+                    tools_used=response.get("tools_used", []),
+                    confidence_score=response.get("confidence", 0.0)
+                ).model_dump()
+            
+            # Fallback to legacy agentic system
+            elif has_legacy:
+                print("🤖 Using legacy agentic orchestrator")
+                if self.logger:
+                    self.logger.info("chat_processing", "Using legacy agentic orchestrator", 
+                                   session_id=session_id, turn_id=turn_id)
+                
+                response = self.agent_orchestrator.process_query(
+                    query=message,
+                    session_id=session_id,
+                    turn_id=turn_id
+                )
+                
+                processing_time = (time.time() - start_time) * 1000
+                
+                # Extract search results from agent response
+                search_results = []
+                if hasattr(self, '_last_search_results'):
+                    search_results = self._last_search_results
+                
+                return ChatResponse(
+                    response=response.get("answer", "I couldn't process your query."),
+                    search_results=search_results,
+                    timestamp=datetime.utcnow().isoformat(),
+                    processing_time=processing_time,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    query_type=response.get("query_type", "general"),
+                    tools_used=response.get("tools_used", []),
+                    confidence_score=response.get("confidence_score", 0.0)
+                ).model_dump()
+            
+            else:
+                # Final fallback to traditional processing
+                print("⚠️ Falling back to traditional chat processing")
+                return await self._process_traditional_chat(message, session_id, turn_id, user_id, start_time)
+                
+        except Exception as e:
+            processing_time = (time.time() - start_time) * 1000
+            
+            if self.logger:
+                self.logger.error("chat_processing", f"Chat processing failed: {e}",
+                                session_id=session_id, turn_id=turn_id)
+            
+            # Try traditional fallback on error
+            try:
+                return await self._process_traditional_chat(message, session_id, turn_id, user_id, start_time)
+            except:
+                # Ultimate fallback
+                return ChatResponse(
+                    response=f"I encountered an error while processing your message. Please try rephrasing your question or ask about specific database tables.",
+                    search_results=[],
+                    timestamp=datetime.utcnow().isoformat(),
+                    processing_time=processing_time,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    query_type="error",
+                    tools_used=[],
+                    confidence_score=0.0
+                ).model_dump()
+    
+    async def _process_traditional_chat(self, message: str, session_id: str, turn_id: str, user_id: str, start_time: float) -> Dict[str, Any]:
+        """Traditional chat processing without agent orchestrator."""
+        if self.logger:
+            with self.logger.trace_operation("traditional_chat", session_id=session_id, turn_id=turn_id) as perf:
+                return self._execute_traditional_chat(message, session_id, turn_id, user_id, start_time, perf)
+        else:
+            return self._execute_traditional_chat(message, session_id, turn_id, user_id, start_time)
+    
+    def _execute_traditional_chat(self, message: str, session_id: str, turn_id: str, user_id: str, start_time: float, perf=None) -> Dict[str, Any]:
+        """Execute traditional chat processing with conversation detection."""
+        # Import QueryRouter for conversation detection
+        from services.agents.agentic_behavior import QueryRouter
+        router = QueryRouter()
+        
+        # Check if this is casual conversation
+        query_type = router.classify_query(message, {})
+        
+        if query_type == "conversation":
+            # Handle conversation without database search
+            conversation_response = self._handle_casual_conversation(message)
+            processing_time = (time.time() - start_time) * 1000
+            
+            return ChatResponse(
+                response=conversation_response,
+                search_results=[],
+                timestamp=datetime.utcnow().isoformat(),
+                processing_time=processing_time,
+                session_id=session_id,
+                turn_id=turn_id,
+                query_type="conversation",
+                tools_used=["conversation_handler"],
+                confidence_score=1.0
+            ).model_dump()
+        
+        # Otherwise, perform database search and processing
+        search_results = self.semantic_search(message, max_results=5)
+        self._last_search_results = search_results  # Store for potential agent use
+        
+        if perf:
+            perf.checkpoint("search_completed")
+        
+        # Build context and generate response
+        context = self.build_context(message, max_results=5)
+        
+        if perf:
+            perf.checkpoint("context_built")
+        
+        # Generate LLM response
+        llm_response = "Based on the database search results, I found relevant information about your query."
+        if self.llm_manager:
+            try:
+                llm_response = self.llm_manager.generate_response(
+                    query=message,
+                    context=context,
+                    max_tokens=500
+                )
+                if perf:
+                    perf.checkpoint("llm_response_generated")
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning("llm_generation", f"LLM generation failed: {e}")
+                llm_response = context  # Fallback to context
+        
+        processing_time = (time.time() - start_time) * 1000
+        
+        return ChatResponse(
+            response=llm_response,
+            search_results=search_results,
+            timestamp=datetime.utcnow().isoformat(),
+            processing_time=processing_time,
+            session_id=session_id,
+            turn_id=turn_id,
+            query_type=query_type,
+            tools_used=["semantic_search", "llm_generation"],
+            confidence_score=0.7 if search_results else 0.1
+        ).model_dump()
+    
+    def _handle_casual_conversation(self, message: str) -> str:
+        """Handle casual conversation without database access."""
+        message_lower = message.lower().strip()
+        
+        if any(greeting in message_lower for greeting in ["hi", "hello", "hey"]):
+            responses = [
+                "Hello! I'm PIO AI, your AML database assistant. I can help you explore database schemas, analyze data, and answer questions about your AML system.",
+                "Hi there! I'm here to help you with AML database queries, table information, and data analysis. What would you like to know?",
+                "Hello! I can assist you with database schema exploration, data analysis, and AML-related queries. How can I help you today?"
+            ]
+            import random
+            return random.choice(responses)
+            
+        elif any(pattern in message_lower for pattern in ["how are you", "what's up"]):
+            return "I'm doing well, thank you! I'm ready to help you with your AML database questions. What would you like to explore today?"
+            
+        elif any(pattern in message_lower for pattern in ["what can you do", "help", "what are you"]):
+            return """I'm PIO AI, your intelligent AML database assistant! Here's what I can help you with:
+
+🔍 **Database Exploration**: Ask about table schemas, column information, and database structure
+📊 **Data Analysis**: Query data patterns, null values, record counts, and data quality
+💬 **Smart Conversations**: I remember our conversation context for follow-up questions
+🧠 **AML Expertise**: Help with compliance data, transaction monitoring, and risk assessment queries
+
+Try asking me things like:
+• "What tables contain customer information?"
+• "Show me the schema for transaction tables"
+• "How many null values are in the customer table?"
+• "What AML-related data do we have?"
+
+What would you like to explore?"""
+            
+        elif any(pattern in message_lower for pattern in ["thanks", "thank you"]):
+            return "You're welcome! Feel free to ask me anything about your AML database or data analysis needs."
+            
+        elif any(pattern in message_lower for pattern in ["bye", "goodbye"]):
+            return "Goodbye! Come back anytime you need help with AML database queries or analysis."
+            
+        else:
+            # Generic conversational response
+            return "I understand. Is there anything specific about the AML database or data analysis I can help you with?"
     
     def build_context(self, query: str, max_results: int = 5) -> str:
         """Build detailed context from semantic search results."""
@@ -468,13 +965,6 @@ EXPERT RESPONSE:"""
         response_parts.append("• 'Show me transaction monitoring tables'")
         
         return "\n".join(response_parts)
-
-# Initialize chatbot on startup
-@app.on_event("startup")
-async def startup_event():
-    global chatbot
-    chatbot = AMLWebChatBot()
-    chatbot.initialize()
 
 # API Routes
 @app.get("/", response_class=HTMLResponse)
@@ -882,35 +1372,112 @@ async def get_chat_interface():
     return HTMLResponse(content=html_content)
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(message: ChatMessage):
-    """Process chat message and return response."""
+async def chat_endpoint(message: ChatMessage, background_tasks: BackgroundTasks):
+    """Enhanced chat endpoint with agentic behavior and observability."""
     if not chatbot:
         raise HTTPException(status_code=500, detail="Chat bot not initialized")
     
     try:
-        import time
-        start_time = time.time()
+        # Use the enhanced chat processing
+        response = await chatbot.process_chat_message(
+            message=message.message,
+            session_id=message.session_id,
+            user_id=message.user_id
+        )
         
-        # Get search results
-        search_results = chatbot.semantic_search(message.message, max_results=message.max_results)
+        # Log metrics in background
+        if chatbot.observability and chatbot.observability.get_metrics_collector():
+            background_tasks.add_task(
+                chatbot.observability.get_metrics_collector().record_query_metrics,
+                query_type=response.get("query_type", "unknown"),
+                duration_ms=response.get("processing_time", 0),
+                success=True,
+                confidence_score=response.get("confidence_score", 0.0),
+                tools_used=response.get("tools_used", []),
+                session_id=response.get("session_id")
+            )
         
-        # Build context
-        context = chatbot.build_context(message.message, max_results=message.max_results)
+        return response
         
-        # Generate response
-        response = chatbot.generate_response(message.message, context)
+    except Exception as e:
+        # Log error metrics
+        if chatbot.observability and chatbot.observability.get_metrics_collector():
+            background_tasks.add_task(
+                chatbot.observability.get_metrics_collector().record_query_metrics,
+                query_type="error",
+                duration_ms=0,
+                success=False,
+                confidence_score=0.0,
+                tools_used=[],
+                session_id=message.session_id
+            )
         
-        processing_time = time.time() - start_time
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/system/status")
+async def system_status():
+    """Get comprehensive system status."""
+    if not chatbot:
+        return SystemStatus(
+            status="uninitialized",
+            timestamp=datetime.utcnow().isoformat(),
+            components={"chatbot": "not_initialized"},
+            performance_stats={},
+            agent_available=False,
+            storage_layer="unknown"
+        )
+    
+    try:
+        components = {
+            "bge_model": "ready" if chatbot.bge_model else "not_loaded",
+            "chroma_client": "ready" if chatbot.chroma_client else "not_connected",
+            "collections": f"{len(chatbot.collections)}_loaded" if chatbot.collections else "none",
+            "llm_manager": "ready" if chatbot.llm_manager else "not_available"
+        }
         
-        return ChatResponse(
-            response=response,
-            search_results=search_results,
-            timestamp=datetime.now().isoformat(),
-            processing_time=processing_time
+        # Production components status
+        if hasattr(chatbot, 'observability') and chatbot.observability:
+            components["observability"] = "enabled"
+        if hasattr(chatbot, 'performance_optimizer') and chatbot.performance_optimizer:
+            components["performance_optimizer"] = "enabled"
+        if hasattr(chatbot, 'agent_orchestrator') and chatbot.agent_orchestrator:
+            components["agent_orchestrator"] = "enabled"
+        if hasattr(chatbot, 'parquet_layer') and chatbot.parquet_layer:
+            components["parquet_storage"] = "ready"
+        
+        # Get performance stats
+        performance_stats = {}
+        if hasattr(chatbot, 'performance_optimizer') and chatbot.performance_optimizer:
+            performance_stats = chatbot.performance_optimizer.get_performance_stats()
+        
+        # Get observability health check
+        if hasattr(chatbot, 'observability') and chatbot.observability:
+            observability_health = chatbot.observability.health_check()
+            components.update(observability_health.get("components", {}))
+            performance_stats.update(observability_health.get("statistics", {}))
+        
+        overall_status = "healthy"
+        if any("error" in status or "not_" in status for status in components.values()):
+            overall_status = "degraded"
+        
+        return SystemStatus(
+            status=overall_status,
+            timestamp=datetime.utcnow().isoformat(),
+            components=components,
+            performance_stats=performance_stats,
+            agent_available=bool(hasattr(chatbot, 'agent_orchestrator') and chatbot.agent_orchestrator),
+            storage_layer="parquet" if hasattr(chatbot, 'parquet_layer') and chatbot.parquet_layer else "legacy"
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return SystemStatus(
+            status="error",
+            timestamp=datetime.utcnow().isoformat(),
+            components={"error": str(e)},
+            performance_stats={},
+            agent_available=False,
+            storage_layer="unknown"
+        )
 
 @app.get("/search")
 async def search_endpoint(query: str, max_results: int = 5):
@@ -942,7 +1509,7 @@ async def status_endpoint():
 
 if __name__ == "__main__":
     import uvicorn
-    print("🌐 Starting AML Chat Web Interface...")
-    print("📍 Open your browser and go to: http://localhost:8009")
-    print("🔗 Or try: http://127.0.0.1:8009")
-    uvicorn.run(app, host="127.0.0.1", port=8009)
+    print("Starting AML Chat Web Interface...")
+    print("Open your browser and go to: http://localhost:8010")
+    print("Or try: http://127.0.0.1:8010")
+    uvicorn.run(app, host="127.0.0.1", port=8010)

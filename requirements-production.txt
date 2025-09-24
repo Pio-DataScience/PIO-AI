@@ -1,0 +1,56 @@
+# Production Requirements
+# Complete dependency list for the production-ready agentic RAG system
+
+# Core RAG Dependencies
+sentence-transformers>=2.2.2
+chromadb>=0.4.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+
+# Database & Storage
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=14.0.0
+oracledb>=1.4.0
+sqlalchemy>=2.0.0
+
+# Agentic Behavior (LangGraph)
+langgraph>=0.0.40
+langchain>=0.1.0
+langchain-core>=0.1.0
+
+# Observability & Monitoring
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-jaeger>=1.20.0
+opentelemetry-exporter-prometheus>=1.20.0
+
+# Performance & Caching
+redis>=4.6.0
+asyncpg>=0.29.0
+asyncio-pool>=0.6.0
+
+# LLM Providers
+cohere>=4.0.0
+openai>=1.0.0
+
+# Web & API
+requests>=2.31.0
+httpx>=0.25.0
+aiohttp>=3.9.0
+
+# Data Processing
+jsonschema>=4.19.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+
+# Development & Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0
+
+# Optional Async Database Drivers
+aiooracledb>=1.0.0  # For async Oracle support
+asyncpg>=0.29.0     # For async PostgreSQL support (if used)

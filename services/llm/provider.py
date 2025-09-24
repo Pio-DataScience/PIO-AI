@@ -404,6 +404,14 @@ class LLMManager:
         """Get list of available providers."""
         return [name for name, provider in self.providers.items() if provider.is_available()]
 
+    def get_provider(self, provider_name: Optional[str] = None) -> LLMProvider:
+        """Get a specific provider instance."""
+        name = provider_name or self.default_provider
+        if name not in self.providers:
+            raise ValueError(f"Unknown provider: {name}")
+        return self.providers[name]
+        
+
 
 def load_llm_config() -> LLMConfig:
     """Load LLM configuration from environment."""
