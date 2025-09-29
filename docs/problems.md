@@ -37,3 +37,25 @@ Re-run the embedding pipeline on the full dataset
 Replace the current ChromaDB collection with full embeddings
 The good news: Your embedding pipeline works perfectly! It just needs to process the complete dataset instead of the sample.
 ================================================================================================
+Date: 9/24/2025 solved = NO
+create instruction files for copilot make sure to remove all print statments replaced with a full functioing logging system that wrtie on txt files, based on the phase excuting eg: langgraph folder API folders scripts folder etc.
+remove all emojies never use them.
+================================================================================================
+Date: 9/24/2025 solved = NO
+IN MAR file classify_intent function uses weak hard coded quick classifer, remove it.
+2) we are using hard coded abuse detection check if their are libraies/frameworks for this task rather than doing it manually.
+================================================================================================
+Date: 9/24/2025 solved = NO
+IN MAR file _LLM_CLASSIFY_ function imporove the prompt.
+
+
+================================================================================================
+Date: 9/24/2025 solved = NO
+count of the columns is wrong
+================================================================================================
+aml requried is the only one we check on for now make it check for every thing.
+================================================================================================
+================================================================================================
+================================================================================================
+================================================================================================
+================================================================================================

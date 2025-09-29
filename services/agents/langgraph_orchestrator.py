@@ -66,7 +66,7 @@ class VectorOnlyRetriever:
                     coll = self.chroma_client.get_collection(collection.name)
                     if coll.count() > 0:
                         self.collections[collection.name] = coll
-                        logger.info(f"✅ Loaded collection '{collection.name}' with {coll.count()} embeddings")
+                        logger.info(f"Loaded collection '{collection.name}' with {coll.count()} embeddings")
                 
                 logger.info(f"Vector retrieval initialized with {len(self.collections)} collections")
                 

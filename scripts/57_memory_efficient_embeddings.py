@@ -80,7 +80,7 @@ def verify_parquet_data():
         print(f"✅ Complete dictionary data loaded: {parquet_file}")
         print(f"📊 Total records: {len(df):,}")
         print(f"📊 Unique tables: {df['TABLE_NAME'].nunique():,}")
-        print(f"📊 AML columns: {(df.get('MANDATORY_AML_Y_N', '') == 'Y').sum():,}")
+        print(f"📊 AML columns: {(df.get('MANDAOTRY_AML_Y_N', '') == 'Y').sum():,}")
         
         # Verify this is complete data (not sample)
         if len(df) < 5000:  # Assume complete data should have 5000+ rows

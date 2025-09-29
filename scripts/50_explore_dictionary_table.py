@@ -14,50 +14,61 @@ import oracledb
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-# Direct import
-sys.path.append(str(project_root / "services" / "db"))
-from metadata_harvester import MetadataHarvester
+def get_oracle_connection():
+    """Get Oracle database connection using environment variables or config."""
+    try:
+        # Use the actual connection details from the config
+        username = "BI_DWH"
+        password = "BI_DWH"
+        dsn = "192.168.30.43:1521/OPENBI2"
+        
+        print(f"🔗 Connecting to Oracle database: {dsn}")
+        connection = oracledb.connect(
+            user=username,
+            password=password,
+            dsn=dsn
+        )
+        print("✅ Database connection successful")
+        return connection
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        return None
+
+def execute_oracle_query(connection, query, params=None):
+    """Execute Oracle query and return pandas DataFrame."""
+    try:
+        if params:
+            df = pd.read_sql(query, connection, params=params)
+        else:
+            df = pd.read_sql(query, connection)
+        return df
+    except Exception as e:
+        print(f"❌ Query execution failed: {e}")
+        return pd.DataFrame()
 
 def explore_dictionary_table():
     """Explore the structure and content of the dictionary table."""
     
     print("🔍 Exploring BI_DWH.PIO_BANKBI_DICTIONARY_COL_DWH table...")
     
-    # Initialize metadata harvester
-    harvester = MetadataHarvester()
+    # Get Oracle connection
+    connection = get_oracle_connection()
+    if not connection:
+        return None
     
     try:
-        # First, let's get the structure of the dictionary table itself
-        print("\n📋 Getting dictionary table structure...")
-        
-        structure_query = """
-        SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
-        FROM INFORMATION_SCHEMA.COLUMNS 
-        WHERE TABLE_SCHEMA = 'BI_DWH' 
-        AND TABLE_NAME = 'PIO_BANKBI_DICTIONARY_COL_DWH'
-        ORDER BY ORDINAL_POSITION
-        """
-        
-        print("Executing structure query...")
-        structure_df = harvester.execute_query(structure_query)
-        
-        if not structure_df.empty:
-            print(f"\n✅ Dictionary table has {len(structure_df)} columns:")
-            print(structure_df.to_string(index=False))
-        else:
-            print("❌ Could not retrieve table structure")
-            
-        # Now let's get sample data from the dictionary table
+        # Get sample data from the dictionary table
         print("\n📊 Getting sample data from dictionary table...")
         
         sample_query = """
-        SELECT TOP 10 *
+        SELECT *
         FROM BI_DWH.PIO_BANKBI_DICTIONARY_COL_DWH
+        WHERE ROWNUM <= 10
         ORDER BY TABLE_NAME, COLUMN_NAME
         """
         
         print("Executing sample data query...")
-        sample_df = harvester.execute_query(sample_query)
+        sample_df = execute_oracle_query(connection, sample_query)
         
         if not sample_df.empty:
             print(f"\n✅ Retrieved {len(sample_df)} sample records:")
@@ -85,12 +96,12 @@ def explore_dictionary_table():
         SELECT 
             COUNT(DISTINCT TABLE_NAME) as Total_Tables,
             COUNT(*) as Total_Columns,
-            COUNT(CASE WHEN MANDATORY_AML_Y_N = 'Y' THEN 1 END) as AML_Columns,
-            COUNT(CASE WHEN MANDATORY_AML_Y_N = 'N' THEN 1 END) as Non_AML_Columns
+            COUNT(CASE WHEN MANDAOTRY_AML_Y_N = 'Y' THEN 1 END) as AML_Columns,
+            COUNT(CASE WHEN MANDAOTRY_AML_Y_N = 'N' THEN 1 END) as Non_AML_Columns
         FROM BI_DWH.PIO_BANKBI_DICTIONARY_COL_DWH
         """
         
-        stats_df = harvester.execute_query(stats_query)
+        stats_df = execute_oracle_query(connection, stats_query)
         
         if not stats_df.empty:
             print(f"\n📊 Dictionary Table Statistics:")
@@ -101,18 +112,18 @@ def explore_dictionary_table():
         print("\n🎯 Getting AML-specific columns sample...")
         
         aml_query = """
-        SELECT TOP 5 
-            TABLE_NAME, 
+        SELECT TABLE_NAME, 
             COLUMN_NAME, 
             COLUMN_DESCRIPTION_ENG,
             COLUMN_DATA_TYPE,
-            MANDATORY_AML_Y_N
+            MANDAOTRY_AML_Y_N
         FROM BI_DWH.PIO_BANKBI_DICTIONARY_COL_DWH
-        WHERE MANDATORY_AML_Y_N = 'Y'
+        WHERE MANDAOTRY_AML_Y_N = 'Y'
+        AND ROWNUM <= 5
         ORDER BY TABLE_NAME, COLUMN_NAME
         """
         
-        aml_df = harvester.execute_query(aml_query)
+        aml_df = execute_oracle_query(connection, aml_query)
         
         if not aml_df.empty:
             print(f"\n✅ Sample AML-specific columns:")
@@ -127,19 +138,22 @@ def explore_dictionary_table():
         ORDER BY TABLE_NAME, COLUMN_NAME
         """
         
-        full_df = harvester.execute_query(full_query)
+        print("🔄 Executing complete data query (this may take a few minutes)...")
+        full_df = execute_oracle_query(connection, full_query)
         
         if not full_df.empty:
             # Save complete dataset as Parquet (no CSV files)
             output_file = project_root / "warehouse" / "dictionary_data.parquet"
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            
             full_df.to_parquet(output_file, compression='snappy', index=False)
             print(f"✅ Saved COMPLETE {len(full_df)} records to: {output_file}")
             print(f"📊 Tables: {full_df['TABLE_NAME'].nunique()}")
             print(f"📊 Total Columns: {len(full_df)}")
-            print(f"📊 AML Columns: {(full_df['MANDATORY_AML_Y_N'] == 'Y').sum()}")
+            print(f"📊 AML Columns: {(full_df.get('MANDAOTRY_AML_Y_N', '') == 'Y').sum()}")
             
             # Also save just AML columns as separate parquet
-            aml_full_df = full_df[full_df['MANDATORY_AML_Y_N'] == 'Y']
+            aml_full_df = full_df[full_df.get('MANDAOTRY_AML_Y_N', '') == 'Y']
             aml_output_file = project_root / "warehouse" / "dictionary_aml_only.parquet"
             aml_full_df.to_parquet(aml_output_file, compression='snappy', index=False)
             print(f"✅ Saved {len(aml_full_df)} AML records to: {aml_output_file}")
@@ -153,7 +167,8 @@ def explore_dictionary_table():
         return None
     
     finally:
-        harvester.close()
+        connection.close()
+        print("🔌 Database connection closed")
 
 def analyze_table_coverage(df):
     """Analyze which tables have the most AML-relevant columns."""
@@ -165,10 +180,10 @@ def analyze_table_coverage(df):
     # Group by table and analyze AML column coverage
     table_analysis = df.groupby('TABLE_NAME').agg({
         'COLUMN_NAME': 'count',
-        'MANDATORY_AML_Y_N': lambda x: (x == 'Y').sum()
+        'MANDAOTRY_AML_Y_N': lambda x: (x == 'Y').sum()  # Note: typo in column name
     }).rename(columns={
         'COLUMN_NAME': 'Total_Columns',
-        'MANDATORY_AML_Y_N': 'AML_Columns'
+        'MANDAOTRY_AML_Y_N': 'AML_Columns'
     })
     
     table_analysis['AML_Percentage'] = (table_analysis['AML_Columns'] / table_analysis['Total_Columns'] * 100).round(1)

@@ -206,7 +206,7 @@ class AnswerComposer:
         return self._fallback_schema_response(query, table_info)
     
     def _extract_table_metadata(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Extract structured metadata from vector search results."""
+        """Extract structured metadata from vector search results with strict table filtering."""
         table_info = {
             "name": "the table",
             "total_columns": None,
@@ -215,48 +215,97 @@ class AnswerComposer:
             "columns": []
         }
         
-        # Extract table summary and column details
+        # First, collect all table names from results
+        table_names_in_results = set()
+        for res in results:
+            meta = res.get("metadata", {})
+            tname = meta.get("table_name") or meta.get("TABLE_NAME")
+            if tname and "PIO_" in tname:
+                table_names_in_results.add(tname.strip())
+        
+        print(f"🔍 All tables found in results: {list(table_names_in_results)}")
+        
+        # Try to identify the PRIMARY table from the results based on frequency
+        # The table with the most column results is likely the one being asked about
+        table_column_counts = {}
+        for res in results:
+            meta = res.get("metadata", {})
+            if meta.get("entity_type") == "column":
+                tname = meta.get("table_name") or meta.get("TABLE_NAME")
+                if tname:
+                    tname = tname.strip()
+                    table_column_counts[tname] = table_column_counts.get(tname, 0) + 1
+        
+        # Select the table with most columns in the results as the primary table
+        primary_table_name = None
+        if table_column_counts:
+            primary_table_name = max(table_column_counts, key=table_column_counts.get)
+            print(f"🎯 Primary table by column count: {primary_table_name} ({table_column_counts[primary_table_name]} columns)")
+        elif table_names_in_results:
+            # Fallback: use first table found
+            primary_table_name = next(iter(table_names_in_results))
+            print(f"🎯 Primary table by fallback: {primary_table_name}")
+        
+        if primary_table_name:
+            table_info["name"] = primary_table_name
+        
+        # Second pass: collect data ONLY for the primary table
+        columns_for_primary_table = []
+        
         for res in results:
             meta = res.get("metadata", {})
             content = res.get("content", "")
             
-            # Get table name
-            tname = meta.get("table_name") or meta.get("TABLE_NAME")
-            if tname and "PIO_" in tname:
-                table_info["name"] = tname
+            # Get table name for this result
+            result_table_name = meta.get("table_name") or meta.get("TABLE_NAME")
             
-            # Look for table summary
-            if meta.get("entity_type") == "table_summary":
-                table_info["total_columns"] = meta.get("column_count")
-                table_info["aml_column_count"] = meta.get("aml_column_count", 0)
-                if "Business Purpose:" in content:
-                    table_info["purpose"] = content.split("Business Purpose:")[-1].strip()
-            
-            # Collect column details
-            elif meta.get("entity_type") == "column":
-                col_name = meta.get("column_name") or meta.get("COLUMN_NAME")
-                data_type = meta.get("data_type") or meta.get("DATA_TYPE")
-                aml_required = meta.get("aml_required") or meta.get("AML_REQUIRED", "N")
+            # STRICT FILTER: Only use results that match the primary table exactly
+            if result_table_name and primary_table_name and result_table_name.strip() == primary_table_name.strip():
                 
-                description = ""
-                if "Description:" in content:
-                    desc_part = content.split("Description:")[1].split("\n")[0].strip()
-                    description = desc_part
+                # Look for table summary for this specific table
+                if meta.get("entity_type") == "table_summary":
+                    table_info["total_columns"] = meta.get("column_count")
+                    table_info["aml_column_count"] = meta.get("aml_column_count", 0)
+                    if "Business Purpose:" in content:
+                        table_info["purpose"] = content.split("Business Purpose:")[-1].strip()
                 
-                if col_name and col_name != "<NA>":
-                    table_info["columns"].append({
-                        "name": col_name,
-                        "type": data_type if data_type and data_type != "<NA>" else "Unknown",
-                        "description": description,
-                        "aml_required": aml_required == "Y"
-                    })
+                # Collect column details ONLY for this specific table
+                elif meta.get("entity_type") == "column":
+                    col_name = meta.get("column_name") or meta.get("COLUMN_NAME")
+                    data_type = meta.get("data_type") or meta.get("DATA_TYPE")
+                    aml_required = meta.get("aml_required") or meta.get("AML_REQUIRED", "N")
+                    
+                    description = ""
+                    if "Description:" in content:
+                        desc_part = content.split("Description:")[1].split("\n")[0].strip()
+                        description = desc_part
+                    
+                    if col_name and col_name != "<NA>":
+                        columns_for_primary_table.append({
+                            "name": col_name.strip(),
+                            "type": data_type if data_type and data_type != "<NA>" else "Unknown",
+                            "description": description,
+                            "aml_required": aml_required == "Y",
+                            "table_name": result_table_name  # Track source table for verification
+                        })
+                        print(f"✅ Added column {col_name.strip()} from {result_table_name}")
+            else:
+                # Log filtered out results
+                if result_table_name:
+                    print(f"🚫 Filtered out column from {result_table_name} (not {primary_table_name})")
+        
+        table_info["columns"] = columns_for_primary_table
+        
+        print(f"📊 Final metadata: Table={primary_table_name}, Columns={len(columns_for_primary_table)}")
+        for col in columns_for_primary_table:
+            print(f"   - {col['name']} ({col['type']})")
         
         return table_info
     
     async def _llm_compose_schema(self, query: str, table_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Use LLM to compose natural schema response."""
+        """Use LLM to compose natural schema response with strict anti-hallucination measures."""
         
-        # Build context summary for LLM
+        # Build STRICT context summary from only actual retrieved data
         context_parts = [f"Table: {table_info['name']}"]
         
         if table_info["total_columns"]:
@@ -266,51 +315,99 @@ class AnswerComposer:
         if table_info["purpose"]:
             context_parts.append(f"Purpose: {table_info['purpose']}")
         
-        # Add column details
+        # Add ONLY the actual retrieved columns (no inference)
+        actual_columns = []
         if table_info["columns"]:
-            context_parts.append(f"\nColumn details ({len(table_info['columns'])} shown):")
-            for col in table_info["columns"][:8]:  # Show first 8 columns
-                aml_status = "AML required" if col["aml_required"] else "Optional"
-                context_parts.append(f"- {col['name']} ({col['type']}): {col['description']} [{aml_status}]")
+            context_parts.append(f"\nACTUAL COLUMNS FOUND IN DATABASE ({len(table_info['columns'])} columns):")
+            for col in table_info["columns"]:
+                col_info = f"- {col['name']}"
+                if col.get('type') and col['type'] != 'Unknown':
+                    col_info += f" ({col['type']})"
+                if col.get('description'):
+                    col_info += f": {col['description']}"
+                if col.get('aml_required'):
+                    col_info += " [AML required]"
+                context_parts.append(col_info)
+                actual_columns.append(col['name'])
         
         schema_context = "\n".join(context_parts)
         
-        # Create LLM prompt
-        prompt = f"""You are an AML database analyst. Answer the user's question about this database table using natural, professional language.
+        # Create STRICT anti-hallucination prompt
+        # Create STRICT anti-hallucination prompt with accurate column count
+        column_count_statement = ""
+        if table_info["total_columns"]:
+            column_count_statement = f"This table contains {table_info['total_columns']} columns in total"
+            if table_info["aml_column_count"]:
+                column_count_statement += f" (with {table_info['aml_column_count']} columns required for AML compliance)"
+        elif len(table_info["columns"]) > 0:
+            column_count_statement = f"Database shows at least {len(table_info['columns'])} columns (details shown below)"
+        else:
+            column_count_statement = "Column structure information is available"
+
+        prompt = f"""You are a database analyst. Answer ONLY using the provided factual information below. DO NOT infer, assume, or make up any column names or details not explicitly listed.
 
 USER QUESTION: "{query}"
 
-TABLE INFORMATION:
+FACTUAL TABLE INFORMATION FROM DATABASE:
 {schema_context}
 
-INSTRUCTIONS:
-1. Provide a clear, informative answer about the table
-2. Use natural language (no markdown formatting, hashtags, or emojis)
-3. Mention key details like total columns, AML requirements, and purpose
-4. Describe important columns with their business meaning
-5. Keep the response professional and business-focused
-6. If showing only a subset of columns, mention the total count
+COLUMN COUNT ACCURACY: {column_count_statement}
+
+STRICT INSTRUCTIONS:
+1. Use ONLY the column names explicitly listed above - DO NOT mention any other columns
+2. Use ONLY the data types and descriptions provided - DO NOT infer additional details  
+3. If asked about columns not in the list, state "not found in available data"
+4. Use natural language but stick strictly to the facts provided
+5. Mention that this shows the columns found in the database dictionary
+6. DO NOT use markdown, hashtags, or special formatting
+7. Be accurate about the total column count - use the exact number provided: {table_info['total_columns'] if table_info['total_columns'] else 'information available'}
+
+The columns listed above are the COMPLETE and ONLY columns you should reference.
 
 Answer:"""
 
         try:
             llm_response = self.llm_provider.chat(
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=1000,
-                temperature=0.6
+                max_tokens=800,  # Reduced to prevent elaboration
+                temperature=0.1  # Very low temperature to prevent creativity
             )
             
             if llm_response and llm_response.content and len(llm_response.content.strip()) > 20:
+                response_text = llm_response.content.strip()
+                
+                # Additional hallucination check: ensure no unknown columns are mentioned
+                mentioned_columns = []
+                for word in response_text.split():
+                    # Clean word of punctuation
+                    clean_word = word.strip('.,:-()[]{}').upper()
+                    if '_' in clean_word and any(clean_word.startswith(prefix) for prefix in ['PIO_', 'BI_', 'DWH_', 'ACT_', 'BOND_', 'CUS_', 'DEAL_']):
+                        mentioned_columns.append(clean_word)
+                
+                # Check if mentioned columns are in actual retrieved columns
+                invalid_mentions = []
+                actual_columns_upper = [col.upper() for col in actual_columns]
+                for mentioned in mentioned_columns:
+                    if mentioned not in actual_columns_upper and mentioned != table_info['name'].upper():
+                        invalid_mentions.append(mentioned)
+                
+                if invalid_mentions:
+                    print(f"🚨 HALLUCINATION DETECTED: LLM mentioned non-existent columns: {invalid_mentions}")
+                    print(f"🚨 Actual columns in database: {actual_columns}")
+                    # Fall back to template response to avoid hallucination
+                    return self._fallback_schema_response(query, table_info)
+                
                 return {
-                    "answer": llm_response.content.strip(),
+                    "answer": response_text,
                     "response_type": "schema",
                     "confidence": 0.9,
-                    "method": "llm_generated",
+                    "method": "llm_generated_verified",
                     "data_summary": {
                         "table": table_info["name"],
                         "total_columns": table_info["total_columns"],
                         "detailed_columns": len(table_info["columns"]),
-                        "aml_columns": table_info["aml_column_count"]
+                        "aml_columns": table_info["aml_column_count"],
+                        "verified_columns": actual_columns
                     }
                 }
         except Exception as e:
@@ -319,33 +416,62 @@ Answer:"""
         return None
     
     def _fallback_schema_response(self, query: str, table_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback template-based response if LLM fails."""
+        """Fallback template-based response using ONLY factual data - no hallucination."""
         
-        answer_parts = [f"The {table_info['name']} table"]
+        answer_parts = []
         
+        # Table name and basic info
+        table_name = table_info['name']
+        answer_parts.append(f"The {table_name} table")
+        
+        # Column count information
         if table_info["total_columns"]:
-            answer_parts.append(f"has {table_info['total_columns']} columns total")
+            answer_parts.append(f"contains {table_info['total_columns']} columns")
             if table_info["aml_column_count"] is not None:
-                answer_parts.append(f"with {table_info['aml_column_count']} required for AML compliance")
+                answer_parts.append(f"({table_info['aml_column_count']} are required for AML compliance)")
         
+        # Purpose if available
         if table_info["purpose"]:
-            answer_parts.append(f"and is used for {table_info['purpose']}")
+            answer_parts.append(f"and serves the business purpose: {table_info['purpose']}")
         
+        # List ONLY the actual columns found in the database
         if table_info["columns"]:
-            answer_parts.append(f"Key columns include: {', '.join([col['name'] for col in table_info['columns'][:5]])}")
+            column_names = [col['name'] for col in table_info["columns"]]
+            answer_parts.append(f"\n\nActual columns found in database ({len(column_names)} columns):")
+            
+            # Show columns with their data types
+            column_details = []
+            for col in table_info["columns"]:
+                col_detail = col['name']
+                if col.get('type') and col['type'] != 'Unknown':
+                    col_detail += f" ({col['type']})"
+                column_details.append(col_detail)
+            
+            # Group columns for better readability
+            if len(column_details) <= 10:
+                answer_parts.append(", ".join(column_details))
+            else:
+                # Show first 10 and mention there are more
+                answer_parts.append(", ".join(column_details[:10]) + f", and {len(column_details) - 10} more columns")
+        else:
+            answer_parts.append("(column details not available in current query results)")
         
         answer = " ".join(answer_parts) + "."
+        
+        # Clean up any double spaces
+        answer = " ".join(answer.split())
         
         return {
             "answer": answer,
             "response_type": "schema",
-            "confidence": 0.7,
-            "method": "template_fallback",
+            "confidence": 0.8,  # High confidence since it's factual only
+            "method": "template_factual_only",
             "data_summary": {
                 "table": table_info["name"],
                 "total_columns": table_info["total_columns"],
                 "detailed_columns": len(table_info["columns"]),
-                "aml_columns": table_info["aml_column_count"]
+                "aml_columns": table_info["aml_column_count"],
+                "factual_only": True  # Flag to indicate no hallucination risk
             }
         }
     

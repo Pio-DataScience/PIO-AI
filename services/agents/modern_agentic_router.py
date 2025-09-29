@@ -145,16 +145,25 @@ class ModernAgenticRouter:
         
         # Follow-up indicators with recent context
         recent_entities = session_context.get("recent_entities", {})
-        follow_up_words = ["which", "what about", "how many", "show me", "those", "them", "it"]
+        turn_count = session_context.get("turn_count", 0)
         
-        if recent_entities and any(word in query_lower for word in follow_up_words):
+        follow_up_words = ["which", "what about", "how many", "show me", "those", "them", "it", "more", "also", "and", "too", "further", "additional"]
+        continuation_phrases = ["tell me more", "more about", "more details", "more specific", "give me more", "what else", "now tell me", "great, now", "ok, now"]
+        
+        # Check for explicit continuation phrases first
+        has_continuation = any(phrase in query_lower for phrase in continuation_phrases)
+        has_follow_up_words = any(word in query_lower for word in follow_up_words)
+        
+        print(f'🔍 QUICK_CLASSIFY: has_continuation={has_continuation}, has_follow_up_words={has_follow_up_words}, turn_count={turn_count}')
+        
+        if turn_count > 0 and (has_continuation or (recent_entities and has_follow_up_words)):
             return IntentClassification(
                 intent=IntentType.FOLLOW_UP,
                 confidence=0.85,
                 entities=recent_entities,
                 requires_tools=True,
                 context_carryover=list(recent_entities.keys()),
-                reasoning="Follow-up detected with recent context"
+                reasoning=f"Follow-up detected: continuation={has_continuation}, context_words={has_follow_up_words}, turn_count={turn_count}"
             )
         
         # Default to LLM classification for complex cases
@@ -196,7 +205,7 @@ INTENT CATEGORIES:
 - abuse: Harassment, toxicity, inappropriate content
 
 ENTITY TYPES TO EXTRACT:
-- tables: Database table names (especially PIO_*, BI_DWH.*)
+- tables: Database table names
 - columns: Column names mentioned
 - business: Business concepts (customer, transaction, risk, aml, compliance)
 - technical: Technical terms (sql, query, schema, index)
@@ -314,6 +323,8 @@ class ConversationMemory:
     def add_turn(self, session_id: str, turn: ConversationTurn) -> None:
         """Add turn to short-term memory and update episodic summary."""
         
+        print(f"🧠 ADD_TURN: Called for session {session_id}, turn: {turn.query[:50]}...")
+        
         # Update short-term sliding window
         if session_id not in self.short_term:
             self.short_term[session_id] = []
@@ -328,13 +339,26 @@ class ConversationMemory:
         self._update_episodic_summary(session_id, turn)
         
         # Persist to storage
+        print(f"🧠 ADD_TURN: Persisting session {session_id}...")
         self._persist_session(session_id)
+        print(f"🧠 ADD_TURN: Session {session_id} persisted successfully")
     
     def get_context(self, session_id: str) -> Dict[str, Any]:
         """Get rich context for intent classification and tool routing."""
         
+        print(f'🧠 GET_CONTEXT: Called for session {session_id}')
+        print(f'🧠 GET_CONTEXT: session_id in short_term? {session_id in self.short_term}')
+        print(f'🧠 GET_CONTEXT: session_id in episodic? {session_id in self.episodic}')
+        
+        # Load session from storage if not in memory
+        if session_id not in self.short_term and session_id not in self.episodic:
+            print(f'🧠 GET_CONTEXT: Session not in memory, loading from disk...')
+            self._load_session(session_id)
+        
         recent_turns = self.short_term.get(session_id, [])
         episodic_summary = self.episodic.get(session_id, {})
+        print(f'🧠 MEMORY DEBUG: recent_turns count: {len(recent_turns)}')
+        print(f'🧠 MEMORY DEBUG: short_term keys: {list(self.short_term.keys())}')
         
         # Extract recent entities and topics
         recent_entities = {}
@@ -387,6 +411,87 @@ class ConversationMemory:
             summary["key_entities"][entity_type].extend(entities)
             # Deduplicate
             summary["key_entities"][entity_type] = list(dict.fromkeys(summary["key_entities"][entity_type]))
+        
+        # Generate conversation summary
+        try:
+            # Get all turns for this session
+            session_turns = self.short_term.get(session_id, [])
+            if len(session_turns) > 0:
+                # Create a concise summary of the conversation
+                key_tables = summary["key_entities"].get("tables", [])
+                key_queries = [t.query for t in session_turns[-3:]]  # Last 3 queries
+                
+                if key_tables:
+                    table_summary = f"Discussed tables: {', '.join(key_tables[:5])}"
+                else:
+                    table_summary = "General database inquiry"
+                
+                summary["summary"] = f"{table_summary}. Recent queries: {len(session_turns)} total."
+                print(f'🧠 EPISODIC: Updated summary for {session_id}: {summary["summary"]}')
+        except Exception as e:
+            print(f'🧠 EPISODIC: Failed to generate summary: {e}')
+            summary["summary"] = f"Database conversation with {len(self.short_term.get(session_id, []))} turns"
+    
+    def _load_session(self, session_id: str) -> None:
+        """Load session data from storage into memory."""
+        try:
+            session_file = self.storage_path / f"session_{session_id}.json"
+            print(f'🧠 LOAD_SESSION: Checking file {session_file}')
+            print(f'🧠 LOAD_SESSION: File exists? {session_file.exists()}')
+            
+            if session_file.exists():
+                with open(session_file, 'r') as f:
+                    session_data = json.load(f)
+                
+                # Restore turns to short-term memory
+                turns = []
+                turns_data = session_data.get("turns", [])
+                print(f'🧠 LOAD_SESSION: Found {len(turns_data)} turns in file')
+                
+                for turn_data in turns_data:
+                    try:
+                        turn = ConversationTurn(
+                            turn_id=turn_data["turn_id"],
+                            query=turn_data["query"],
+                            intent=IntentType(turn_data["intent"]),
+                            entities=turn_data["entities"],
+                            tools_used=turn_data["tools_used"],
+                            response=turn_data["response"],
+                            confidence=turn_data["confidence"],
+                            timestamp=datetime.fromisoformat(turn_data["timestamp"]),
+                            context_inherited=turn_data["context_inherited"]
+                        )
+                        turns.append(turn)
+                    except Exception as turn_error:
+                        logger.warning(f"Failed to load turn {turn_data.get('turn_id', 'unknown')}: {turn_error}")
+                        # Continue loading other turns
+                        continue
+                
+                self.short_term[session_id] = turns
+                print(f'🧠 LOAD_SESSION: Loaded {len(turns)} turns into short_term[{session_id}]')
+                
+                # Restore episodic memory
+                episodic = session_data.get("episodic_summary", {})
+                self.episodic[session_id] = episodic
+                
+                logger.info(f"Loaded session {session_id} with {len(turns)} turns")
+            else:
+                print(f'🧠 LOAD_SESSION: File does not exist, initializing empty session')
+                # Initialize empty session
+                self.short_term[session_id] = []
+                self.episodic[session_id] = {
+                    "summary": "",
+                    "active_topics": [],
+                    "preferences": {},
+                    "key_entities": {},
+                    "session_start": datetime.utcnow().isoformat()
+                }
+                
+        except Exception as e:
+            logger.warning(f"Failed to load session {session_id}: {e}")
+            # Initialize empty session on failure
+            self.short_term[session_id] = []
+            self.episodic[session_id] = {}
     
     def _persist_session(self, session_id: str) -> None:
         """Persist session data to storage."""

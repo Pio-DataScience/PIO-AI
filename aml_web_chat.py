@@ -355,7 +355,7 @@ class AMLWebChatBot:
                         "model": "command-r-08-2024",
                         "temperature": 0.1
                     },
-                    "memory_path": "memory/sessions",
+                    "memory_path": "memory",
                     "schema_db_path": "indexes/graph/AI_AML.sqlite",
                     "db_config": self._get_oracle_config() or {}
                 }
@@ -549,7 +549,7 @@ class AMLWebChatBot:
             if has_modern:
                 print("Using modern agentic orchestrator")
                 if self.logger:
-                    self.logger.info("chat_processing", "Using modern agentic orchestrator", 
+                    self.logger.info("chat_processing", "Using modern agentic orchestrator",
                                    session_id=session_id, turn_id=turn_id)
                 
                 # Set observability context
@@ -1242,6 +1242,9 @@ async def get_chat_interface():
     </div>
 
     <script>
+        // Session management
+        let currentSessionId = null;
+        
         function addMessage(content, isUser = false, searchResults = null) {
             const messagesDiv = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
@@ -1321,15 +1324,25 @@ async def get_chat_interface():
             addLoadingMessage();
             
             try {
+                const requestBody = { message: message };
+                if (currentSessionId) {
+                    requestBody.session_id = currentSessionId;
+                }
+                
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ message: message })
+                    body: JSON.stringify(requestBody)
                 });
                 
                 const data = await response.json();
+                
+                // Store session ID for future requests
+                if (data.session_id) {
+                    currentSessionId = data.session_id;
+                }
                 
                 removeLoadingMessage();
                 
