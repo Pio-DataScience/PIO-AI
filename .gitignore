@@ -27,3 +27,6 @@ warehouse/
 warehouse/
 *.db
 *.sqlite*
+keys.md
+.env
+*.env
