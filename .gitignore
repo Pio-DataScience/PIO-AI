@@ -18,4 +18,9 @@ memory/
 *.parquet
 *.db
 *.sqlite3
-test*
+test*warehouse/
+*.db
+*.sqlite*
+warehouse/
+*.db
+*.sqlite*
