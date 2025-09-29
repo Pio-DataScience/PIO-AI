@@ -24,3 +24,6 @@ test*warehouse/
 warehouse/
 *.db
 *.sqlite*
+warehouse/
+*.db
+*.sqlite*
