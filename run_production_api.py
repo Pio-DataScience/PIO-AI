@@ -28,9 +28,9 @@ try:
     port = int(os.getenv("API_PORT", "8090"))  # Changed to different port
     debug = os.getenv("DEBUG", "false").lower() == "true"
     
-    print(f"🚀 Starting PIO-AI Production AML API on {host}:{port}")
-    print(f"📚 Documentation available at http://{host}:{port}/docs")
-    print(f"🔍 Interactive API at http://{host}:{port}/redoc")
+    print(f"Starting PIO-AI Production AML API on {host}:{port}")
+    print(f"Documentation available at http://{host}:{port}/docs")
+    print(f"Interactive API at http://{host}:{port}/redoc")
     
     uvicorn.run(
         app,
@@ -41,10 +41,10 @@ try:
     )
     
 except ImportError as e:
-    print(f"❌ Import error: {e}")
+    print(f"Import error: {e}")
     print(f"Current working directory: {os.getcwd()}")
     print(f"Python path: {sys.path}")
     sys.exit(1)
 except Exception as e:
-    print(f"❌ Error starting server: {e}")
+    print(f"Error starting server: {e}")
     sys.exit(1)

@@ -27,17 +27,17 @@ def main():
     args = parser.parse_args()
     
     try:
-        print(f"🔗 Building graph index for project: {args.project}")
+        print(f"Building graph index for project: {args.project}")
         
         # Load project info
         project_info = get_project_by_name(args.project)
         if not project_info:
-            print(f"❌ Project '{args.project}' not found in manifest.yaml")
+            print(f"Project '{args.project}' not found in manifest.yaml")
             return 1
         
         project_root = Path(project_info["root_path"])
         if not project_root.exists():
-            print(f"❌ Project root does not exist: {project_root}")
+            print(f"Project root does not exist: {project_root}")
             return 1
         
         # Check if index already exists
@@ -72,15 +72,15 @@ def main():
         print(f"   - Import relationships: {stats['imports']}")
         print(f"   - Call relationships: {stats['calls']}")
         print(f"   - Time: {elapsed:.2f}s")
-        print(f"📁 Index saved to: {graph_db}")
+        print(f"Index saved to: {graph_db}")
         
         return 0
         
     except KeyboardInterrupt:
-        print("\n❌ Interrupted by user")
+        print("\nInterrupted by user")
         return 130
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()

@@ -179,11 +179,11 @@ def analyze_graph(graph_store: ProductionGraphStore):
         logger.info("PRODUCTION GRAPH ANALYSIS")
         logger.info("="*60)
         
-        logger.info(f"📊 Total Nodes: {stats.get('total_nodes', 0):,}")
-        logger.info(f"🔗 Total Relationships: {stats.get('total_relationships', 0):,}")
+        logger.info(f"Total Nodes: {stats.get('total_nodes', 0):,}")
+        logger.info(f"Total Relationships: {stats.get('total_relationships', 0):,}")
         
         # Entity type distribution
-        logger.info("\n📋 Entity Types:")
+        logger.info("\nEntity Types:")
         for entity_type in stats.get('entity_types', []):
             logger.info(f"  {entity_type['type']}: {entity_type['count']:,} entities")
         
@@ -193,21 +193,21 @@ def analyze_graph(graph_store: ProductionGraphStore):
             logger.info(f"  {rel_type['type']}: {rel_type['count']:,} relationships")
         
         # Top owners/schemas
-        logger.info("\n👥 Top Schemas (by entity count):")
+        logger.info("\nTop Schemas (by entity count):")
         for owner in stats.get('owners', []):
             logger.info(f"  {owner['owner']}: {owner['count']:,} entities")
         
         logger.info("="*60)
         
         # Sample graph queries
-        logger.info("\n🔍 Sample Graph Queries:")
+        logger.info("\nSample Graph Queries:")
         
         # Find highly connected tables
         logger.info("Most connected tables (by relationship count)...")
         # This would require a more complex query in a real implementation
         
     except Exception as e:
-        logger.error(f"❌ Error analyzing graph: {e}")
+        logger.error(f"Error analyzing graph: {e}")
 
 def test_graph_queries(graph_store: ProductionGraphStore, sample_queries: List[str]):
     """Test graph with sample queries."""
@@ -325,11 +325,11 @@ def main():
             # Test with sample queries
             test_graph_queries(graph_store, args.test_queries)
             
-            logger.info("✅ Production AML graph build completed successfully!")
-            logger.info("💡 Graph is ready for production queries and analytics")
+            logger.info("Production AML graph build completed successfully!")
+            logger.info("Graph is ready for production queries and analytics")
         
     except Exception as e:
-        logger.error(f"❌ Error building production graph: {e}")
+        logger.error(f"Error building production graph: {e}")
         raise
 
 if __name__ == "__main__":

@@ -46,7 +46,7 @@ class VectorOnlyRetriever:
                 # Initialize BGE model (matching the model used to create embeddings)
                 logger.info("Loading BGE-large-en-v1.5 model...")
                 self.bge_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
-                logger.info(f"✅ BGE model loaded (dimension: {self.bge_model.get_sentence_embedding_dimension()})")
+                logger.info(f"BGE model loaded (dimension: {self.bge_model.get_sentence_embedding_dimension()})")
                 
                 # Initialize ChromaDB
                 warehouse_path = Path("warehouse")

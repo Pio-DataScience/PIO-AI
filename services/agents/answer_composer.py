@@ -52,55 +52,55 @@ class AnswerComposer:
         
         try:
             # Debug input parameters
-            print(f"🔧 DEBUG compose_answer: query='{query}'")
-            print(f"🔧 DEBUG compose_answer: results type={type(results)}, length={len(results) if isinstance(results, list) else 'not a list'}")
-            print(f"🔧 DEBUG compose_answer: schema_context type={type(schema_context)}")
-            print(f"🔧 DEBUG compose_answer: conversation_context type={type(conversation_context)}")
+            print(f"DEBUG compose_answer: query='{query}'")
+            print(f"DEBUG compose_answer: results type={type(results)}, length={len(results) if isinstance(results, list) else 'not a list'}")
+            print(f"DEBUG compose_answer: schema_context type={type(schema_context)}")
+            print(f"DEBUG compose_answer: conversation_context type={type(conversation_context)}")
             
             # Validate input types
             if not isinstance(results, list):
-                print(f"🔧 ERROR: results is not a list, it's {type(results)}: {results}")
+                print(f"ERROR: results is not a list, it's {type(results)}: {results}")
                 results = []
             
             if not isinstance(schema_context, dict):
-                print(f"🔧 ERROR: schema_context is not a dict, it's {type(schema_context)}: {schema_context}")
+                print(f"ERROR: schema_context is not a dict, it's {type(schema_context)}: {schema_context}")
                 schema_context = {}
                 
             if not isinstance(conversation_context, dict):
-                print(f"🔧 ERROR: conversation_context is not a dict, it's {type(conversation_context)}: {conversation_context}")
+                print(f"ERROR: conversation_context is not a dict, it's {type(conversation_context)}: {conversation_context}")
                 conversation_context = {}
             
             # Determine response type based on query and results
             if not results:
-                print("🔧 DEBUG: No results, calling _compose_no_results_response")
+                print("DEBUG: No results, calling _compose_no_results_response")
                 return await self._compose_no_results_response(query, sql_query, schema_context)
             
             # Analyze query intent for appropriate response style
-            print("🔧 DEBUG: Analyzing response type...")
+            print("DEBUG: Analyzing response type...")
             response_type = self._analyze_response_type(query, sql_query, results)
-            print(f"🔧 DEBUG: Response type determined: {response_type}")
+            print(f"DEBUG: Response type determined: {response_type}")
             
             if response_type == "count":
-                print("🔧 DEBUG: Calling _compose_count_response")
+                print("DEBUG: Calling _compose_count_response")
                 return await self._compose_count_response(query, results, schema_context)
             elif response_type == "schema":
-                print("🔧 DEBUG: Calling _compose_schema_response")
+                print("DEBUG: Calling _compose_schema_response")
                 return await self._compose_schema_response(query, results, schema_context)
             elif response_type == "sample_data":
-                print("🔧 DEBUG: Calling _compose_data_response")
+                print("DEBUG: Calling _compose_data_response")
                 return await self._compose_data_response(query, results, schema_context)
             elif response_type == "analysis":
-                print("🔧 DEBUG: Calling _compose_analysis_response")
+                print("DEBUG: Calling _compose_analysis_response")
                 return await self._compose_analysis_response(query, results, schema_context, conversation_context)
             else:
-                print("🔧 DEBUG: Calling _compose_general_response")
+                print("DEBUG: Calling _compose_general_response")
                 return await self._compose_general_response(query, results, schema_context, conversation_context)
                 
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            print(f"🔧 ERROR in compose_answer: {e}")
-            print(f"🔧 ERROR traceback: {error_details}")
+            print(f"ERROR in compose_answer: {e}")
+            print(f"ERROR traceback: {error_details}")
             logger.log_error("answer_composer", "compose_answer", e, metadata={"traceback": error_details})
             return {
                 "answer": "I found some data but had trouble formatting the response. Please try rephrasing your question.",
@@ -113,21 +113,21 @@ class AnswerComposer:
         
         query_lower = query.lower()
         
-        print(f"🔧 DEBUG: _analyze_response_type - query: {query_lower}")
+        print(f"DEBUG: _analyze_response_type - query: {query_lower}")
         
         # Schema exploration (CHECK FIRST - most specific)
         if any(phrase in query_lower for phrase in ["tell me about", "describe", "what is", "table structure", "table details", "schema"]) or \
            any(word in query_lower for word in ["columns", "structure", "details"]):
-            print("🔧 DEBUG: Detected SCHEMA query")
+            print("DEBUG: Detected SCHEMA query")
             return "schema"
         
         # Count queries (ONLY specific count requests)
         if any(phrase in query_lower for phrase in ["how many", "count of", "number of"]):
-            print("🔧 DEBUG: Detected COUNT query")
+            print("DEBUG: Detected COUNT query")
             return "count"
         
         # Everything else is general - let LLM handle it
-        print("🔧 DEBUG: Defaulting to GENERAL query - LLM will handle")
+        print("DEBUG: Defaulting to GENERAL query - LLM will handle")
         return "general"
     
     async def _compose_count_response(self, query: str, results: List[Dict[str, Any]], schema_context: Dict[str, Any]) -> Dict[str, Any]:
@@ -175,14 +175,14 @@ class AnswerComposer:
     
     async def _compose_schema_response(self, query: str, results: List[Dict[str, Any]], schema_context: Dict[str, Any]) -> Dict[str, Any]:
         """Compose response for schema information queries using LLM with rich context."""
-        print(f"🔧 DEBUG: _compose_schema_response called with {len(results)} results")
+        print(f"DEBUG: _compose_schema_response called with {len(results)} results")
         
         # If results are empty, try to use vector_results from schema_context
         vector_results = schema_context.get("vector_results", [])
         if not results and vector_results:
             results = vector_results
         if not results:
-            print("🔧 DEBUG: No results found, returning empty response")
+            print("DEBUG: No results found, returning empty response")
             return {
                 "answer": "No schema information found for the requested table.",
                 "response_type": "schema", 
@@ -191,7 +191,7 @@ class AnswerComposer:
 
         # Extract and organize metadata for LLM context
         table_info = self._extract_table_metadata(results)
-        print(f"🔧 DEBUG: Extracted metadata for table: {table_info['name']}")
+        print(f"DEBUG: Extracted metadata for table: {table_info['name']}")
         
         # Use LLM to generate natural response if available
         if self.llm_provider:
@@ -200,7 +200,7 @@ class AnswerComposer:
                 if llm_response:
                     return llm_response
             except Exception as e:
-                print(f"🔧 DEBUG: LLM composition failed, using fallback: {e}")
+                print(f"DEBUG: LLM composition failed, using fallback: {e}")
         
         # Fallback to simple template response
         return self._fallback_schema_response(query, table_info)
@@ -223,7 +223,7 @@ class AnswerComposer:
             if tname and "PIO_" in tname:
                 table_names_in_results.add(tname.strip())
         
-        print(f"🔍 All tables found in results: {list(table_names_in_results)}")
+        print(f"All tables found in results: {list(table_names_in_results)}")
         
         # Try to identify the PRIMARY table from the results based on frequency
         # The table with the most column results is likely the one being asked about
@@ -240,11 +240,11 @@ class AnswerComposer:
         primary_table_name = None
         if table_column_counts:
             primary_table_name = max(table_column_counts, key=table_column_counts.get)
-            print(f"🎯 Primary table by column count: {primary_table_name} ({table_column_counts[primary_table_name]} columns)")
+            print(f"Primary table by column count: {primary_table_name} ({table_column_counts[primary_table_name]} columns)")
         elif table_names_in_results:
             # Fallback: use first table found
             primary_table_name = next(iter(table_names_in_results))
-            print(f"🎯 Primary table by fallback: {primary_table_name}")
+            print(f"Primary table by fallback: {primary_table_name}")
         
         if primary_table_name:
             table_info["name"] = primary_table_name
@@ -288,15 +288,15 @@ class AnswerComposer:
                             "aml_required": aml_required == "Y",
                             "table_name": result_table_name  # Track source table for verification
                         })
-                        print(f"✅ Added column {col_name.strip()} from {result_table_name}")
+                        print(f"Added column {col_name.strip()} from {result_table_name}")
             else:
                 # Log filtered out results
                 if result_table_name:
-                    print(f"🚫 Filtered out column from {result_table_name} (not {primary_table_name})")
+                    print(f"Filtered out column from {result_table_name} (not {primary_table_name})")
         
         table_info["columns"] = columns_for_primary_table
         
-        print(f"📊 Final metadata: Table={primary_table_name}, Columns={len(columns_for_primary_table)}")
+        print(f"Final metadata: Table={primary_table_name}, Columns={len(columns_for_primary_table)}")
         for col in columns_for_primary_table:
             print(f"   - {col['name']} ({col['type']})")
         
@@ -392,8 +392,8 @@ Answer:"""
                         invalid_mentions.append(mentioned)
                 
                 if invalid_mentions:
-                    print(f"🚨 HALLUCINATION DETECTED: LLM mentioned non-existent columns: {invalid_mentions}")
-                    print(f"🚨 Actual columns in database: {actual_columns}")
+                    print(f"HALLUCINATION DETECTED: LLM mentioned non-existent columns: {invalid_mentions}")
+                    print(f"Actual columns in database: {actual_columns}")
                     # Fall back to template response to avoid hallucination
                     return self._fallback_schema_response(query, table_info)
                 
@@ -581,23 +581,23 @@ Provide a natural, helpful response:"""
         """Compose general response using LLM with context awareness."""
         
         try:
-            print(f"🔧 DEBUG _compose_general_response: results type={type(results)}, length={len(results) if isinstance(results, list) else 'not a list'}")
-            print(f"🔧 DEBUG _compose_general_response: schema_context type={type(schema_context)}")
-            print(f"🔧 DEBUG _compose_general_response: conversation_context type={type(conversation_context)}")
+            print(f"DEBUG _compose_general_response: results type={type(results)}, length={len(results) if isinstance(results, list) else 'not a list'}")
+            print(f"DEBUG _compose_general_response: schema_context type={type(schema_context)}")
+            print(f"DEBUG _compose_general_response: conversation_context type={type(conversation_context)}")
             
             # Check if we should use conversation context first (memory-aware responses)
             previous_table_context = conversation_context.get("current_table_context")
             if previous_table_context and not results:
-                print("🔧 DEBUG: Using previous table context from conversation memory")
+                print("DEBUG: Using previous table context from conversation memory")
                 return await self._llm_compose_from_memory(query, previous_table_context, conversation_context)
             
             if not results:
-                print("🔧 DEBUG: No results in _compose_general_response, calling _compose_no_results_response")
+                print("DEBUG: No results in _compose_general_response, calling _compose_no_results_response")
                 return await self._compose_no_results_response(query, "", schema_context)
             
             # Validate results is actually a list of dicts
             if not isinstance(results, list):
-                print(f"🔧 ERROR: results is not a list in _compose_general_response: {type(results)}")
+                print(f"ERROR: results is not a list in _compose_general_response: {type(results)}")
                 return {
                     "answer": "I encountered an issue processing the results. Please try rephrasing your question.",
                     "response_type": "error",
@@ -606,23 +606,23 @@ Provide a natural, helpful response:"""
             
             # Check if schema_context is valid
             if not isinstance(schema_context, dict):
-                print(f"🔧 ERROR: schema_context is not a dict in _compose_general_response: {type(schema_context)}")
+                print(f"ERROR: schema_context is not a dict in _compose_general_response: {type(schema_context)}")
                 schema_context = {}
             
             # Use LLM to compose natural response with full context
             if self.llm_provider:
-                print("🔧 DEBUG: Using LLM to compose general response")
+                print("DEBUG: Using LLM to compose general response")
                 return await self._llm_compose_general(query, results, schema_context, conversation_context)
             
             # Fallback to template response if no LLM
-            print("🔧 DEBUG: No LLM available, using template fallback")
+            print("DEBUG: No LLM available, using template fallback")
             return self._template_general_response(query, results, schema_context)
             
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            print(f"🔧 ERROR in _compose_general_response: {e}")
-            print(f"🔧 ERROR traceback: {error_details}")
+            print(f"ERROR in _compose_general_response: {e}")
+            print(f"ERROR traceback: {error_details}")
             return {
                 "answer": "I encountered an issue formatting the response. Please try rephrasing your question.",
                 "response_type": "error",
@@ -653,7 +653,7 @@ Provide a natural, helpful response:"""
     async def _llm_compose_from_memory(self, query: str, table_context: Dict[str, Any], conversation_context: Dict[str, Any]) -> Dict[str, Any]:
         """Use conversation memory to answer questions about previously discussed tables."""
         
-        print("🔧 DEBUG: Composing response from conversation memory")
+        print("DEBUG: Composing response from conversation memory")
         
         try:
             # Extract table information from memory
@@ -715,7 +715,7 @@ Answer:"""
                 }
                 
         except Exception as e:
-            print(f"🔧 DEBUG: Memory-based LLM composition failed: {e}")
+            print(f"DEBUG: Memory-based LLM composition failed: {e}")
         
         # Fallback if memory approach fails
         return {
@@ -733,7 +733,7 @@ Answer:"""
             if requested_column:
                 column_found = self._validate_column_in_results(requested_column, results)
                 if not column_found:
-                    print(f"🔧 WARNING: User asked about column '{requested_column}' but it was not found in vector search results")
+                    print(f"WARNING: User asked about column '{requested_column}' but it was not found in vector search results")
                     return {
                         "answer": f"I couldn't find information about the column '{requested_column}' in the search results. This column may not exist in the database or might have a different name. Could you double-check the column name or ask me to search for similar columns?",
                         "response_type": "column_not_found",
@@ -791,7 +791,7 @@ Answer:"""
                 }
                 
         except Exception as e:
-            print(f"🔧 DEBUG: LLM general composition failed: {e}")
+            print(f"DEBUG: LLM general composition failed: {e}")
         
         # Fallback to template
         return self._template_general_response(query, results, schema_context)

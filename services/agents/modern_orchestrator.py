@@ -375,7 +375,7 @@ class ModernAgentOrchestrator:
     async def _route_node(self, state: dict) -> dict:
         """Route query using modern intent classification."""
         
-        print(f"🚦 ROUTE DEBUG: Starting route node for query: '{state['query']}'")
+        print(f"ROUTE DEBUG: Starting route node for query: '{state['query']}'")
         execution_path = state["execution_path"] + ["route"]
         
         try:
@@ -387,15 +387,15 @@ class ModernAgentOrchestrator:
             state["enhanced_query"] = enhanced_query
             
             # Classify intent with conversation context
-            print(f"🚦 ROUTE DEBUG: Calling router.classify_intent() with enhanced query")
+            print(f"ROUTE DEBUG: Calling router.classify_intent() with enhanced query")
             classification = self.router.classify_intent(
                 enhanced_query,
                 state["conversation_context"]
             )
             
-            print(f"🚦 ROUTE DEBUG: Intent classification complete: {classification.intent.value} (confidence: {classification.confidence})")
-            print(f"🚦 ROUTE DEBUG: Requires tools: {classification.requires_tools}")
-            print(f"🚦 ROUTE DEBUG: Entities found: {classification.entities}")
+            print(f"ROUTE DEBUG: Intent classification complete: {classification.intent.value} (confidence: {classification.confidence})")
+            print(f"ROUTE DEBUG: Requires tools: {classification.requires_tools}")
+            print(f"ROUTE DEBUG: Entities found: {classification.entities}")
             
             # Determine route
             if classification.intent == IntentType.ABUSE:
@@ -411,7 +411,7 @@ class ModernAgentOrchestrator:
             else:
                 route_decision = "schema_task"  # Safe default
                 
-            print(f"🚦 ROUTE DEBUG: Route decision made: {route_decision}")
+            print(f"ROUTE DEBUG: Route decision made: {route_decision}")
             
             logger.log_operation(
                 component="router",
@@ -446,9 +446,9 @@ class ModernAgentOrchestrator:
     async def _conversation_node(self, state: dict) -> dict:
         """Handle conversational interactions using LLM for dynamic responses."""
         
-        print(f"💬 CONVERSATION DEBUG: Entering conversation node")
-        print(f"💬 CONVERSATION DEBUG: Query: '{state['query']}'")
-        print(f"💬 CONVERSATION DEBUG: Intent classification: {state.get('intent_classification', 'None')}")
+        print(f"CONVERSATION DEBUG: Entering conversation node")
+        print(f"CONVERSATION DEBUG: Query: '{state['query']}'")
+        print(f"CONVERSATION DEBUG: Intent classification: {state.get('intent_classification', 'None')}")
         
         state["execution_path"].append("conversation")
         
@@ -456,16 +456,16 @@ class ModernAgentOrchestrator:
             classification = state["intent_classification"]
             query = state["query"].lower().strip()
             
-            print(f"💬 CONVERSATION DEBUG: Processing query type, classification intent: {classification.intent.value if classification else 'None'}")
+            print(f"CONVERSATION DEBUG: Processing query type, classification intent: {classification.intent.value if classification else 'None'}")
             
             if classification and classification.intent == IntentType.ABUSE:
-                print(f"💬 CONVERSATION DEBUG: Handling abuse case")
+                print(f"CONVERSATION DEBUG: Handling abuse case")
                 # Handle abuse with brief redirect
                 response = self.safety.handle_abuse(query, state["conversation_context"])
             
             else:
                 # Use LLM to generate contextual conversation responses
-                print(f"💬 CONVERSATION DEBUG: Using LLM for dynamic conversation response")
+                print(f"CONVERSATION DEBUG: Using LLM for dynamic conversation response")
                 
                 conversation_prompt = f"""You are an AML (Anti-Money Laundering) database assistant. Respond to the user's conversational query naturally and helpfully.
 
@@ -486,14 +486,14 @@ class ModernAgentOrchestrator:
                         messages = [{"role": "user", "content": conversation_prompt}]
                         llm_response = self.llm_manager.chat(messages)
                         response = llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
-                        print(f"💬 CONVERSATION DEBUG: LLM generated response: {response[:100]}...")
+                        print(f"CONVERSATION DEBUG: LLM generated response: {response[:100]}...")
                     else:
                         # Fallback only if no LLM available
                         response = "Hello! I'm your AML database assistant. I can help you explore database schemas, analyze data patterns, and answer questions about your AML system. What would you like to explore?"
-                        print(f"💬 CONVERSATION DEBUG: Using fallback response (no LLM)")
+                        print(f"CONVERSATION DEBUG: Using fallback response (no LLM)")
                         
                 except Exception as llm_error:
-                    print(f"💬 CONVERSATION DEBUG: LLM failed: {llm_error}, using fallback")
+                    print(f"CONVERSATION DEBUG: LLM failed: {llm_error}, using fallback")
                     response = "Hello! I'm your AML database assistant. I can help you explore database schemas, analyze data patterns, and answer questions about your AML system. What would you like to explore?"
             
             state["response"] = response
@@ -519,10 +519,10 @@ class ModernAgentOrchestrator:
     async def _schema_retrieve_node(self, state: dict) -> dict:
         """Retrieve relevant schema information using vector search only."""
         
-        print("🔍 SCHEMA RETRIEVE NODE STARTED")  # Simple print to see if node executes
-        print(f"🗄️ SCHEMA DEBUG: Entering schema retrieve node")
-        print(f"🗄️ SCHEMA DEBUG: Query: '{state['query']}'")
-        print(f"🗄️ SCHEMA DEBUG: Current entities: {state.get('entities', {})}")
+        print("SCHEMA RETRIEVE NODE STARTED")  # Simple print to see if node executes
+        print(f"SCHEMA DEBUG: Entering schema retrieve node")
+        print(f"SCHEMA DEBUG: Query: '{state['query']}'")
+        print(f"SCHEMA DEBUG: Current entities: {state.get('entities', {})}")
         
         state["execution_path"].append("schema_retrieve")
         
@@ -556,11 +556,11 @@ class ModernAgentOrchestrator:
                 # Create context-aware query
                 unique_terms = list(set(search_terms))  # Remove duplicates
                 query = f"{' '.join(unique_terms)} {base_query}"  # Combine entities with query
-                print(f"🗄️ SCHEMA DEBUG: Context-aware query: '{query}'")
-                print(f"🗄️ SCHEMA DEBUG: Search terms from context: {unique_terms}")
+                print(f"SCHEMA DEBUG: Context-aware query: '{query}'")
+                print(f"SCHEMA DEBUG: Search terms from context: {unique_terms}")
             else:
                 query = base_query
-                print(f"🗄️ SCHEMA DEBUG: Using base query (no context): '{query}'")
+                print(f"SCHEMA DEBUG: Using base query (no context): '{query}'")
             
             # Use vector search to find relevant schema information  
             # Import VectorOnlyRetriever from langgraph_orchestrator
@@ -579,12 +579,12 @@ class ModernAgentOrchestrator:
                 # Search for schema information in vector database
                 vector_results = vector_retriever.semantic_search(query, max_results=10)
                 
-                print(f"🗄️ SCHEMA DEBUG: Vector search found {len(vector_results)} results")
+                print(f"SCHEMA DEBUG: Vector search found {len(vector_results)} results")
                 
                 # Debug: Print first few results
                 for i, result in enumerate(vector_results[:3]):
-                    print(f"🗄️ SCHEMA DEBUG: Result {i+1}: {result.get('content', '')[:100]}...")
-                    print(f"🗄️ SCHEMA DEBUG: Result {i+1} metadata: {result.get('metadata', {})}")
+                    print(f"SCHEMA DEBUG: Result {i+1}: {result.get('content', '')[:100]}...")
+                    print(f"SCHEMA DEBUG: Result {i+1} metadata: {result.get('metadata', {})}")
                 
                 if vector_results:
                     # Convert vector results to schema format for compatibility
@@ -605,7 +605,7 @@ class ModernAgentOrchestrator:
                             table_name = metadata["table_name"]
                             if table_name and table_name not in schema_results["tables"]:
                                 schema_results["tables"].append(table_name)
-                                print(f"🗄️ SCHEMA DEBUG: Found table from metadata: {table_name}")
+                                print(f"SCHEMA DEBUG: Found table from metadata: {table_name}")
                         
                         # ===========================================================================================
                         # Buring this delete it
@@ -619,12 +619,12 @@ class ModernAgentOrchestrator:
                             for table_name in table_names:
                                 if table_name and table_name not in schema_results["tables"]:
                                     schema_results["tables"].append(table_name)
-                                    print(f"🗄️ SCHEMA DEBUG: Found table from content: {table_name}")
+                                    print(f"SCHEMA DEBUG: Found table from content: {table_name}")
                     # ===========================================================================================
                     # Remove duplicates
                     schema_results["tables"] = list(set(schema_results["tables"]))
                     
-                    print(f"🗄️ SCHEMA DEBUG: Extracted {len(schema_results['tables'])} potential table references")
+                    print(f"SCHEMA DEBUG: Extracted {len(schema_results['tables'])} potential table references")
                     
                 else:
                     schema_results = {
@@ -633,10 +633,10 @@ class ModernAgentOrchestrator:
                         "total_results": 0,
                         "vector_results": []
                     }
-                    print(f"🗄️ SCHEMA DEBUG: No vector results found")
+                    print(f"SCHEMA DEBUG: No vector results found")
                 
             except Exception as vector_error:
-                print(f"🗄️ SCHEMA DEBUG: Vector retrieval failed: {vector_error}, using fallback")
+                print(f"SCHEMA DEBUG: Vector retrieval failed: {vector_error}, using fallback")
                 schema_results = {
                     "tables": [],
                     "columns": [],
@@ -823,19 +823,19 @@ class ModernAgentOrchestrator:
             if schema_ctx.get("vector_results"):
                 results = schema_ctx["vector_results"]
                 import pprint
-                debug_msg = f"🟦 DEBUG: Passing {len(results) if results else 0} results to compose_answer for schema query (vector_results present)"
+                debug_msg = f"DEBUG: Passing {len(results) if results else 0} results to compose_answer for schema query (vector_results present)"
                 print(debug_msg)
                 print(debug_msg)
                 if results:
-                    debug_first = f"🟦 DEBUG: First result: {pprint.pformat(results[0])}"
+                    debug_first = f"DEBUG: First result: {pprint.pformat(results[0])}"
                     print(debug_first)
                     print(debug_first)
-                debug_ctx = f"🟦 DEBUG: Schema context: {pprint.pformat(schema_ctx)}"
+                debug_ctx = f"DEBUG: Schema context: {pprint.pformat(schema_ctx)}"
                 print(debug_ctx)
                 print(debug_ctx)
             # Use enhanced query if available, otherwise fall back to basic query
             query_to_use = state.get("enhanced_query", state["query"])
-            print(f"🔧 DEBUG compose_answer: Using {'enhanced' if 'enhanced_query' in state else 'basic'} query")
+            print(f"DEBUG compose_answer: Using {'enhanced' if 'enhanced_query' in state else 'basic'} query")
             
             composed_result = await self.answer_composer.compose_answer(
                 query=query_to_use,
@@ -879,7 +879,7 @@ class ModernAgentOrchestrator:
         """Save conversation turn to memory with enhanced memory management."""
         
         state["execution_path"].append("save_memory")
-        print(f"🧠 SAVE_MEMORY_NODE: Called for session {state['session_id']}")
+        print(f"SAVE_MEMORY_NODE: Called for session {state['session_id']}")
         
         try:
             # Update enhanced memory using helper function
@@ -905,10 +905,10 @@ class ModernAgentOrchestrator:
                 context_inherited=state["conversation_context"]
             )
             
-            print(f"🧠 SAVE_MEMORY_NODE: Saving turn: {turn.query[:50]}...")
+            print(f"SAVE_MEMORY_NODE: Saving turn: {turn.query[:50]}...")
             # Save to traditional memory
             self.memory.add_turn(state["session_id"], turn)
-            print(f"🧠 SAVE_MEMORY_NODE: Turn saved successfully")
+            print(f"SAVE_MEMORY_NODE: Turn saved successfully")
             
             logger.log_operation(
                 component="memory",
@@ -921,7 +921,7 @@ class ModernAgentOrchestrator:
             )
             
         except Exception as e:
-            print(f"🧠 SAVE_MEMORY_NODE: ERROR - {e}")
+            print(f"SAVE_MEMORY_NODE: ERROR - {e}")
             logger.log_error("memory", "save_turn", e)
             state["errors"].append(f"Memory save failed: {e}")
         
@@ -954,7 +954,7 @@ Keep it concise and solution-oriented (3-4 sentences max)."""
                 messages = [{"role": "user", "content": error_prompt}]
                 llm_response = self.llm_manager.chat(messages)
                 response = llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
-                print(f"🔄 ERROR HANDLER DEBUG: LLM generated error response")
+                print(f"ERROR HANDLER DEBUG: LLM generated error response")
             else:
                 # Fallback only if no LLM available
                 if "SQL generation failed" in error_context:
@@ -965,7 +965,7 @@ Keep it concise and solution-oriented (3-4 sentences max)."""
                     response = "I encountered an issue processing your request. Please try asking about a specific table or rephrasing your question. I'm here to help with AML database questions!"
                 
         except Exception as llm_error:
-            print(f"🔄 ERROR HANDLER DEBUG: LLM failed: {llm_error}, using fallback")
+            print(f"ERROR HANDLER DEBUG: LLM failed: {llm_error}, using fallback")
             response = "I encountered an issue processing your request. Please try asking about a specific table or rephrasing your question. I'm here to help with AML database questions!"
         
         state["response"] = response
@@ -1174,10 +1174,10 @@ I'll do my best to help once the issue is resolved."""
         active_topics = conversation_context.get("active_topics", [])
         turn_count = conversation_context.get("turn_count", 0)
         
-        print(f'🔧 BUILD_PROMPT: base_query={base_query}')
-        print(f'🔧 BUILD_PROMPT: turn_count={turn_count}')
-        print(f'🔧 BUILD_PROMPT: recent_turns={recent_turns}')
-        print(f'🔧 BUILD_PROMPT: recent_entities={recent_entities}')
+        print(f'BUILD_PROMPT: base_query={base_query}')
+        print(f'BUILD_PROMPT: turn_count={turn_count}')
+        print(f'BUILD_PROMPT: recent_turns={recent_turns}')
+        print(f'BUILD_PROMPT: recent_entities={recent_entities}')
         
         # Build memory context
         memory_context = []
@@ -1211,7 +1211,7 @@ Please consider the conversation history and previously accessed tables/columns 
         else:
             enhanced_prompt = base_query
         
-        print(f'🔧 BUILD_PROMPT: Enhanced query length: {len(enhanced_prompt)}')
-        print(f'🔧 BUILD_PROMPT: Enhanced query preview: {enhanced_prompt[:200]}...')
+        print(f'BUILD_PROMPT: Enhanced query length: {len(enhanced_prompt)}')
+        print(f'BUILD_PROMPT: Enhanced query preview: {enhanced_prompt[:200]}...')
         
         return enhanced_prompt

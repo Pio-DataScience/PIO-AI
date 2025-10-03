@@ -94,8 +94,8 @@ def main():
         elapsed = time.time() - start_time
         
         # Print results
-        print(f"\n✅ FAISS index built successfully!")
-        print(f"📊 Statistics:")
+        print(f"\nFAISS index built successfully!")
+        print(f"Statistics:")
         print(f"   - Files processed: {total_stats['files_processed']}")
         if total_stats["code_chunks"] > 0:
             print(f"   - Code chunks: {total_stats['code_chunks']}")

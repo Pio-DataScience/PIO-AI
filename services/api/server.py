@@ -271,13 +271,13 @@ async def initialize_production_components():
             db_config = yaml.safe_load(f)
         
         # Initialize catalog store
-        print("📊 Initializing catalog store...")
+        print("Initializing catalog store...")
         catalog_db_path = warehouse_path / "catalog.db"
         production_components.catalog_store = CatalogStore(str(catalog_db_path))
         production_state["catalog_store"] = production_components.catalog_store
         
         # Initialize ChromaDB client
-        print("🔍 Initializing ChromaDB client...")
+        print("Initializing ChromaDB client...")
         chroma_path = warehouse_path / "vectors"
         
         production_components.chroma_client = chromadb.PersistentClient(
@@ -295,15 +295,15 @@ async def initialize_production_components():
         production_state["graph_store"] = production_components.graph_store
         
         # Initialize hybrid retriever
-        print("🔄 Initializing hybrid retriever...")
+        print("Initializing hybrid retriever...")
         production_components.hybrid_retriever = HybridRetriever()
         production_state["hybrid_retriever"] = production_components.hybrid_retriever
         
         production_state["initialized"] = True
-        print("✅ Production AML components initialized successfully")
+        print("Production AML components initialized successfully")
         
     except Exception as e:
-        print(f"❌ Failed to initialize production components: {e}")
+        print(f"Failed to initialize production components: {e}")
         traceback.print_exc()
         raise
 
@@ -333,12 +333,12 @@ async def lifespan(app: FastAPI):
         manifest = read_manifest()
         print(f"📁 Loaded {len(manifest.get('projects', []))} projects from manifest")
     except Exception as e:
-        print(f"⚠️ Warning: Could not load manifest: {e}")
+        print(f"Warning: Could not load manifest: {e}")
     
     # Check LLM providers
     from services.llm.provider import get_available_providers
     providers = get_available_providers()
-    print(f"🤖 Available LLM providers: {providers or 'None (using stub mode)'}")
+    print(f"Available LLM providers: {providers or 'None (using stub mode)'}")
     
     yield
     
@@ -1167,9 +1167,9 @@ if __name__ == "__main__":
     port = int(os.getenv("API_PORT", "8080"))
     debug = os.getenv("DEBUG", "false").lower() == "true"
     
-    print(f"🚀 Starting PIO-AI Production AML API on {host}:{port}")
-    print(f"📚 Documentation available at http://{host}:{port}/docs")
-    print(f"🔍 Interactive API at http://{host}:{port}/redoc")
+    print(f"Starting PIO-AI Production AML API on {host}:{port}")
+    print(f"Documentation available at http://{host}:{port}/docs")
+    print(f"Interactive API at http://{host}:{port}/redoc")
     
     uvicorn.run(
         "server:app",

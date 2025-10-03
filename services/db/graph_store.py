@@ -64,13 +64,13 @@ class ProductionGraphStore:
                 if test_value != 1:
                     raise RuntimeError("Neo4j connectivity test failed")
             
-            logger.info("✅ Neo4j connection established successfully")
+            logger.info("Neo4j connection established successfully")
             
         except ServiceUnavailable as e:
-            logger.error(f"❌ Neo4j service unavailable: {e}")
+            logger.error(f"Neo4j service unavailable: {e}")
             raise
         except Exception as e:
-            logger.error(f"❌ Neo4j connection failed: {e}")
+            logger.error(f"Neo4j connection failed: {e}")
             raise
     
     def close(self):
@@ -115,9 +115,9 @@ class ProductionGraphStore:
             for statement in constraints_and_indexes:
                 try:
                     session.run(statement)
-                    logger.info(f"✅ Applied: {statement}")
+                    logger.info(f"Applied: {statement}")
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to apply: {statement} - {e}")
+                    logger.warning(f"Failed to apply: {statement} - {e}")
     
     def clear_database(self):
         """Clear all data from the graph database."""
@@ -435,7 +435,7 @@ class AMLGraphBuilder:
                 except Exception as e:
                     logger.warning(f"Failed to create table-column relationship: {e}")
         
-        logger.info(f"✅ Created {relationships_created} table-column relationships")
+        logger.info(f"Created {relationships_created} table-column relationships")
     
     def build_foreign_key_relationships(self, catalog_entities: List[Dict[str, Any]]):
         """Build foreign key relationships."""
@@ -470,7 +470,7 @@ class AMLGraphBuilder:
             except Exception as e:
                 logger.warning(f"Failed to create FK relationship: {e}")
         
-        logger.info(f"✅ Created {relationships_created} foreign key relationships")
+        logger.info(f"Created {relationships_created} foreign key relationships")
     
     def build_schema_relationships(self, catalog_entities: List[Dict[str, Any]]):
         """Build schema-level relationships."""
@@ -515,4 +515,4 @@ class AMLGraphBuilder:
                 except Exception as e:
                     logger.warning(f"Failed to create schema relationship: {e}")
         
-        logger.info(f"✅ Created {relationships_created} schema relationships")
+        logger.info(f"Created {relationships_created} schema relationships")

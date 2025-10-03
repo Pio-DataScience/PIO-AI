@@ -38,8 +38,8 @@ def check_gpu_availability():
         
         return True, 'cuda'
     else:
-        print("⚠️  No GPU available - using CPU")
-        print(f"💾 CPU Memory: {psutil.virtual_memory().total / 1e9:.1f} GB")
+        print("Warning: No GPU available - using CPU")
+        print(f"CPU Memory: {psutil.virtual_memory().total / 1e9:.1f} GB")
         return False, 'cpu'
     
     if torch.cuda.is_available():
@@ -48,30 +48,30 @@ def check_gpu_availability():
         gpu_name = torch.cuda.get_device_name(current_device)
         gpu_memory = torch.cuda.get_device_properties(current_device).total_memory / 1e9
         
-        print(f"✅ GPU Available: {gpu_name}")
-        print(f"📊 GPU Memory: {gpu_memory:.1f} GB")
-        print(f"🔢 GPU Devices: {device_count}")
+        print(f"GPU Available: {gpu_name}")
+        print(f"GPU Memory: {gpu_memory:.1f} GB")
+        print(f"GPU Devices: {device_count}")
         
         # Clear any existing GPU memory
         torch.cuda.empty_cache()
         
         return True, 'cuda'
     else:
-        print("⚠️  No GPU available - using CPU")
-        print(f"💾 CPU Memory: {psutil.virtual_memory().total / 1e9:.1f} GB")
+        print("Warning: No GPU available - using CPU")
+        print(f"CPU Memory: {psutil.virtual_memory().total / 1e9:.1f} GB")
         return False, 'cpu'
 
 def verify_parquet_data():
     """Verify that complete dictionary data exists in Parquet format."""
-    print("📦 Verifying complete dictionary data in Parquet format...")
+    print("Verifying complete dictionary data in Parquet format...")
     
     warehouse_path = Path(__file__).parent.parent / "warehouse"
     parquet_file = warehouse_path / "dictionary_data.parquet"
     
     try:
         if not parquet_file.exists():
-            print(f"❌ Parquet file not found: {parquet_file}")
-            print("❌ Please run scripts/50_explore_dictionary_table.py first to export complete data")
+            print(f"Parquet file not found: {parquet_file}")
+            print("Please run scripts/50_explore_dictionary_table.py first to export complete data")
             return None
             
         # Load and verify the data
@@ -103,18 +103,18 @@ def test_small_batch():
     try:
         has_gpu, device = check_gpu_availability()
         
-        print(f"🤖 Loading BGE model on {device.upper()}...")
+        print(f"Loading BGE model on {device.upper()}...")
         model = SentenceTransformer('BAAI/bge-large-en-v1.5', device=device)
         
-        print(f"✅ BGE model loaded on {device.upper()} (dimension: {model.get_sentence_embedding_dimension()})")
+        print(f"BGE model loaded on {device.upper()} (dimension: {model.get_sentence_embedding_dimension()})")
         
         if has_gpu:
             # Optimize for GPU
             model.max_seq_length = 512  # Reasonable length for GPU memory
-            print(f"⚡ GPU optimized - max sequence length: {model.max_seq_length}")
+            print(f"GPU optimized - max sequence length: {model.max_seq_length}")
         
     except Exception as e:
-        print(f"❌ Failed to load BGE model: {e}")
+        print(f"Failed to load BGE model: {e}")
         return False, None
     
     # Setup ChromaDB
@@ -212,15 +212,15 @@ def create_embeddings_memory_efficient(model):
             name=collection_name,
             metadata={"model": "BAAI/bge-large-en-v1.5", "dimension": "1024"}
         )
-        print(f"✅ Created collection: {collection_name}")
+        print(f"Created collection: {collection_name}")
         
         # Dynamic batch sizing based on device
         if has_gpu:
             batch_size = 50  # Larger batches for GPU
-            print(f"⚡ GPU mode: Using batch size {batch_size}")
+            print(f"GPU mode: Using batch size {batch_size}")
         else:
             batch_size = 20  # Smaller batches for CPU
-            print(f"🖥️  CPU mode: Using batch size {batch_size}")
+            print(f"CPU mode: Using batch size {batch_size}")
             
         total_docs = 0
         
@@ -236,11 +236,11 @@ def create_embeddings_memory_efficient(model):
                 if has_gpu and torch.cuda.is_available():
                     gpu_memory_used = torch.cuda.memory_allocated() / 1e9
                     gpu_memory_cached = torch.cuda.memory_reserved() / 1e9
-                    print(f"   🔥 GPU Memory: {gpu_memory_used:.1f}GB used, {gpu_memory_cached:.1f}GB cached")
+                    print(f"   GPU Memory: {gpu_memory_used:.1f}GB used, {gpu_memory_cached:.1f}GB cached")
                     torch.cuda.empty_cache()
                 
                 cpu_memory = psutil.virtual_memory()
-                print(f"   💾 CPU Memory: {cpu_memory.percent}% used ({cpu_memory.used/1e9:.1f}GB/{cpu_memory.total/1e9:.1f}GB)")
+                print(f"   CPU Memory: {cpu_memory.percent}% used ({cpu_memory.used/1e9:.1f}GB/{cpu_memory.total/1e9:.1f}GB)")
                 
                 # Force garbage collection
                 gc.collect()
@@ -372,20 +372,20 @@ def main():
         return False
     
     print("\\n" + "=" * 65)
-    print("✅ Test successful! Proceeding with COMPLETE dictionary embedding...")
+    print("Test successful! Proceeding with COMPLETE dictionary embedding...")
     
     # Step 3: Create production embeddings
     production_success = create_embeddings_memory_efficient(model)
     
     if production_success:
-        print("\\n🎉 SUCCESS: COMPLETE dictionary embeddings created!")
-        print("📊 Data scope: ALL tables and columns (not sample)")
-        print("📦 Data format: Parquet (high compression, fast loading)")
-        print("🔍 Collection: aml_dictionary_metadata_bge (BGE 1024D)")
-        print("💾 Memory: Optimized batch processing")
+        print("\nSUCCESS: COMPLETE dictionary embeddings created!")
+        print("Data scope: ALL tables and columns (not sample)")
+        print("Data format: Parquet (high compression, fast loading)")
+        print("Collection: aml_dictionary_metadata_bge (BGE 1024D)")
+        print("Memory: Optimized batch processing")
         return True
     else:
-        print("\\n❌ Production failed")
+        print("\nProduction failed")
         return False
 
 if __name__ == "__main__":

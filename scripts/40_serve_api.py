@@ -46,18 +46,18 @@ def main():
         # Check if server module exists
         server_path = Path(__file__).parent.parent / "services" / "api" / "server.py"
         if not server_path.exists():
-            print(f"❌ Server module not found: {server_path}")
+            print(f"Server module not found: {server_path}")
             return 1
         
-        print(f"🚀 Starting PIO-AI RAG API...")
-        print(f"📍 Address: http://{args.host}:{args.port}")
-        print(f"📚 Documentation: http://{args.host}:{args.port}/docs")
-        print(f"🔍 Interactive docs: http://{args.host}:{args.port}/redoc")
+        print(f"Starting PIO-AI RAG API...")
+        print(f"Address: http://{args.host}:{args.port}")
+        print(f"Documentation: http://{args.host}:{args.port}/docs")
+        print(f"Interactive docs: http://{args.host}:{args.port}/redoc")
         
         if args.debug:
-            print(f"🐛 Debug mode enabled")
+            print(f"Debug mode enabled")
         if args.reload:
-            print(f"🔄 Auto-reload enabled")
+            print(f"Auto-reload enabled")
         
         # Run the server
         uvicorn.run(
@@ -73,10 +73,10 @@ def main():
         return 0
         
     except KeyboardInterrupt:
-        print("\n👋 Server stopped by user")
+        print("\nServer stopped by user")
         return 0
     except Exception as e:
-        print(f"❌ Error starting server: {e}")
+        print(f"Error starting server: {e}")
         return 1
 
 

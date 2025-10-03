@@ -58,7 +58,7 @@ def explore_dictionary_table():
     
     try:
         # Get sample data from the dictionary table
-        print("\n📊 Getting sample data from dictionary table...")
+        print("\nGetting sample data from dictionary table...")
         
         sample_query = """
         SELECT *
@@ -104,12 +104,12 @@ def explore_dictionary_table():
         stats_df = execute_oracle_query(connection, stats_query)
         
         if not stats_df.empty:
-            print(f"\n📊 Dictionary Table Statistics:")
+            print(f"\nDictionary Table Statistics:")
             for col in stats_df.columns:
                 print(f"  {col}: {stats_df[col].iloc[0]}")
         
         # Get sample of AML-specific columns
-        print("\n🎯 Getting AML-specific columns sample...")
+        print("\nGetting AML-specific columns sample...")
         
         aml_query = """
         SELECT TABLE_NAME, 
@@ -126,11 +126,11 @@ def explore_dictionary_table():
         aml_df = execute_oracle_query(connection, aml_query)
         
         if not aml_df.empty:
-            print(f"\n✅ Sample AML-specific columns:")
+            print(f"\nSample AML-specific columns:")
             print(aml_df.to_string(index=False))
         
         # Save full data directly to Parquet for high performance
-        print("\n💾 Saving COMPLETE dictionary data to Parquet...")
+        print("\nSaving COMPLETE dictionary data to Parquet...")
         
         full_query = """
         SELECT *
@@ -147,16 +147,16 @@ def explore_dictionary_table():
             output_file.parent.mkdir(parents=True, exist_ok=True)
             
             full_df.to_parquet(output_file, compression='snappy', index=False)
-            print(f"✅ Saved COMPLETE {len(full_df)} records to: {output_file}")
-            print(f"📊 Tables: {full_df['TABLE_NAME'].nunique()}")
-            print(f"📊 Total Columns: {len(full_df)}")
-            print(f"📊 AML Columns: {(full_df.get('MANDAOTRY_AML_Y_N', '') == 'Y').sum()}")
+            print(f"Saved COMPLETE {len(full_df)} records to: {output_file}")
+            print(f"Tables: {full_df['TABLE_NAME'].nunique()}")
+            print(f"Total Columns: {len(full_df)}")
+            print(f"AML Columns: {(full_df.get('MANDAOTRY_AML_Y_N', '') == 'Y').sum()}")
             
             # Also save just AML columns as separate parquet
             aml_full_df = full_df[full_df.get('MANDAOTRY_AML_Y_N', '') == 'Y']
             aml_output_file = project_root / "warehouse" / "dictionary_aml_only.parquet"
             aml_full_df.to_parquet(aml_output_file, compression='snappy', index=False)
-            print(f"✅ Saved {len(aml_full_df)} AML records to: {aml_output_file}")
+            print(f"Saved {len(aml_full_df)} AML records to: {aml_output_file}")
             
         return full_df
         
@@ -189,13 +189,13 @@ def analyze_table_coverage(df):
     table_analysis['AML_Percentage'] = (table_analysis['AML_Columns'] / table_analysis['Total_Columns'] * 100).round(1)
     table_analysis = table_analysis.sort_values('AML_Columns', ascending=False)
     
-    print(f"\n📊 Top 10 tables by AML column count:")
+    print(f"\nTop 10 tables by AML column count:")
     print(table_analysis.head(10).to_string())
     
     # Find tables with specific keywords
     aml_tables = table_analysis[table_analysis.index.str.contains('AML|CUSTOMER|TRANSACTION|RISK', case=False, na=False)]
     if not aml_tables.empty:
-        print(f"\n🎯 AML-related tables (by name):")
+        print(f"\nAML-related tables (by name):")
         print(aml_tables.to_string())
 
 if __name__ == "__main__":

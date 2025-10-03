@@ -72,24 +72,24 @@ class ModernAgenticRouter:
         """
         LLM-aided intent classification with entity extraction and context carryover.
         """
-        logger.warning(f"🔍 ROUTER DEBUG: Starting intent classification for query: '{query}'")
-        logger.warning(f"🔍 ROUTER DEBUG: Session context: {session_context}")
-        logger.warning(f"🔍 ROUTER DEBUG: LLM provider available: {self.llm_provider is not None}")
+        logger.warning(f"ROUTER DEBUG: Starting intent classification for query: '{query}'")
+        logger.warning(f"ROUTER DEBUG: Session context: {session_context}")
+        logger.warning(f"ROUTER DEBUG: LLM provider available: {self.llm_provider is not None}")
         
         try:
             # Quick pattern-based pre-filtering for efficiency
-            logger.warning(f"🔍 ROUTER DEBUG: Attempting quick classification first")
+            logger.warning(f"ROUTER DEBUG: Attempting quick classification first")
             quick_classification = self._quick_classify(query, session_context)
-            logger.warning(f"🔍 ROUTER DEBUG: Quick classification result: intent={quick_classification.intent.value}, confidence={quick_classification.confidence}")
+            logger.warning(f"ROUTER DEBUG: Quick classification result: intent={quick_classification.intent.value}, confidence={quick_classification.confidence}")
             
             if quick_classification.confidence > 0.9:
-                logger.warning(f"🔍 ROUTER DEBUG: Using quick classification (confidence > 0.9)")
+                logger.warning(f"ROUTER DEBUG: Using quick classification (confidence > 0.9)")
                 return quick_classification
             
             # Use LLM for nuanced classification
-            logger.warning(f"🔍 ROUTER DEBUG: Quick classification confidence too low, trying LLM classification")
+            logger.warning(f"ROUTER DEBUG: Quick classification confidence too low, trying LLM classification")
             llm_result = self._llm_classify(query, session_context)
-            logger.warning(f"🔍 ROUTER DEBUG: LLM classification result: intent={llm_result.intent.value}, confidence={llm_result.confidence}")
+            logger.warning(f"ROUTER DEBUG: LLM classification result: intent={llm_result.intent.value}, confidence={llm_result.confidence}")
             return llm_result
             
         except Exception as e:
@@ -154,7 +154,7 @@ class ModernAgenticRouter:
         has_continuation = any(phrase in query_lower for phrase in continuation_phrases)
         has_follow_up_words = any(word in query_lower for word in follow_up_words)
         
-        print(f'🔍 QUICK_CLASSIFY: has_continuation={has_continuation}, has_follow_up_words={has_follow_up_words}, turn_count={turn_count}')
+        print(f'QUICK_CLASSIFY: has_continuation={has_continuation}, has_follow_up_words={has_follow_up_words}, turn_count={turn_count}')
         
         if turn_count > 0 and (has_continuation or (recent_entities and has_follow_up_words)):
             return IntentClassification(
@@ -179,7 +179,7 @@ class ModernAgenticRouter:
     def _llm_classify(self, query: str, session_context: Dict[str, Any]) -> IntentClassification:
         """LLM-powered classification for nuanced understanding."""
         
-        logger.warning(f"🤖 LLM DEBUG: Starting LLM classification")
+        logger.warning(f"LLM DEBUG: Starting LLM classification")
         
         # Build context-aware prompt
         recent_turns = session_context.get("recent_turns", [])
@@ -225,26 +225,26 @@ Respond in JSON format:
     "reasoning": "Brief explanation"
 }}"""
 
-        logger.warning(f"🤖 LLM DEBUG: Built classification prompt (length: {len(classification_prompt)})")
-        logger.warning(f"🤖 LLM DEBUG: LLM provider type: {type(self.llm_provider)}")
+        logger.warning(f"LLM DEBUG: Built classification prompt (length: {len(classification_prompt)})")
+        logger.warning(f"LLM DEBUG: LLM provider type: {type(self.llm_provider)}")
 
         try:
             if self.llm_provider:
-                logger.warning(f"🤖 LLM DEBUG: Calling llm_provider.chat()")
+                logger.warning(f"LLM DEBUG: Calling llm_provider.chat()")
                 llm_response = self.llm_provider.chat(
                     messages=[{"role": "user", "content": classification_prompt}],
                     temperature=0.1,
                     max_tokens=300
                 )
                 
-                logger.warning(f"🤖 LLM DEBUG: LLM response type: {type(llm_response)}")
-                logger.warning(f"🤖 LLM DEBUG: LLM response content length: {len(llm_response.content) if hasattr(llm_response, 'content') else 'NO CONTENT ATTR'}")
-                logger.warning(f"🤖 LLM DEBUG: LLM response content: {llm_response.content[:500] if hasattr(llm_response, 'content') else str(llm_response)[:500]}")
+                logger.warning(f"LLM DEBUG: LLM response type: {type(llm_response)}")
+                logger.warning(f"LLM DEBUG: LLM response content length: {len(llm_response.content) if hasattr(llm_response, 'content') else 'NO CONTENT ATTR'}")
+                logger.warning(f"LLM DEBUG: LLM response content: {llm_response.content[:500] if hasattr(llm_response, 'content') else str(llm_response)[:500]}")
                 
                 # Parse JSON response from the content attribute
-                logger.warning(f"🤖 LLM DEBUG: Attempting to parse JSON from LLM response")
+                logger.warning(f"LLM DEBUG: Attempting to parse JSON from LLM response")
                 result = json.loads(llm_response.content)
-                logger.warning(f"🤖 LLM DEBUG: Parsed JSON result: {result}")
+                logger.warning(f"LLM DEBUG: Parsed JSON result: {result}")
                 
                 classification_result = IntentClassification(
                     intent=IntentType(result.get("intent", "general")),
@@ -255,15 +255,15 @@ Respond in JSON format:
                     reasoning=result.get("reasoning", "LLM classification")
                 )
                 
-                logger.warning(f"🤖 LLM DEBUG: Successfully created IntentClassification: {classification_result.intent.value}")
+                logger.warning(f"LLM DEBUG: Successfully created IntentClassification: {classification_result.intent.value}")
                 return classification_result
             else:
-                logger.warning(f"🤖 LLM DEBUG: No LLM provider available, falling back")
+                logger.warning(f"LLM DEBUG: No LLM provider available, falling back")
                 
         except Exception as e:
-            logger.warning(f"🤖 LLM DEBUG: LLM classification failed with exception: {type(e).__name__}: {e}")
+            logger.warning(f"LLM DEBUG: LLM classification failed with exception: {type(e).__name__}: {e}")
             import traceback
-            logger.warning(f"🤖 LLM DEBUG: Full traceback: {traceback.format_exc()}")
+            logger.warning(f"LLM DEBUG: Full traceback: {traceback.format_exc()}")
         
         # Fallback to rule-based classification
         return self._fallback_classify(query, session_context)
@@ -323,7 +323,7 @@ class ConversationMemory:
     def add_turn(self, session_id: str, turn: ConversationTurn) -> None:
         """Add turn to short-term memory and update episodic summary."""
         
-        print(f"🧠 ADD_TURN: Called for session {session_id}, turn: {turn.query[:50]}...")
+        print(f"ADD_TURN: Called for session {session_id}, turn: {turn.query[:50]}...")
         
         # Update short-term sliding window
         if session_id not in self.short_term:
@@ -339,26 +339,26 @@ class ConversationMemory:
         self._update_episodic_summary(session_id, turn)
         
         # Persist to storage
-        print(f"🧠 ADD_TURN: Persisting session {session_id}...")
+        print(f"ADD_TURN: Persisting session {session_id}...")
         self._persist_session(session_id)
-        print(f"🧠 ADD_TURN: Session {session_id} persisted successfully")
+        print(f"ADD_TURN: Session {session_id} persisted successfully")
     
     def get_context(self, session_id: str) -> Dict[str, Any]:
         """Get rich context for intent classification and tool routing."""
         
-        print(f'🧠 GET_CONTEXT: Called for session {session_id}')
-        print(f'🧠 GET_CONTEXT: session_id in short_term? {session_id in self.short_term}')
-        print(f'🧠 GET_CONTEXT: session_id in episodic? {session_id in self.episodic}')
+        print(f'GET_CONTEXT: Called for session {session_id}')
+        print(f'GET_CONTEXT: session_id in short_term? {session_id in self.short_term}')
+        print(f'GET_CONTEXT: session_id in episodic? {session_id in self.episodic}')
         
         # Load session from storage if not in memory
         if session_id not in self.short_term and session_id not in self.episodic:
-            print(f'🧠 GET_CONTEXT: Session not in memory, loading from disk...')
+            print(f'GET_CONTEXT: Session not in memory, loading from disk...')
             self._load_session(session_id)
         
         recent_turns = self.short_term.get(session_id, [])
         episodic_summary = self.episodic.get(session_id, {})
-        print(f'🧠 MEMORY DEBUG: recent_turns count: {len(recent_turns)}')
-        print(f'🧠 MEMORY DEBUG: short_term keys: {list(self.short_term.keys())}')
+        print(f'MEMORY DEBUG: recent_turns count: {len(recent_turns)}')
+        print(f'MEMORY DEBUG: short_term keys: {list(self.short_term.keys())}')
         
         # Extract recent entities and topics
         recent_entities = {}
@@ -427,17 +427,17 @@ class ConversationMemory:
                     table_summary = "General database inquiry"
                 
                 summary["summary"] = f"{table_summary}. Recent queries: {len(session_turns)} total."
-                print(f'🧠 EPISODIC: Updated summary for {session_id}: {summary["summary"]}')
+                print(f'EPISODIC: Updated summary for {session_id}: {summary["summary"]}')
         except Exception as e:
-            print(f'🧠 EPISODIC: Failed to generate summary: {e}')
+            print(f'EPISODIC: Failed to generate summary: {e}')
             summary["summary"] = f"Database conversation with {len(self.short_term.get(session_id, []))} turns"
     
     def _load_session(self, session_id: str) -> None:
         """Load session data from storage into memory."""
         try:
             session_file = self.storage_path / f"session_{session_id}.json"
-            print(f'🧠 LOAD_SESSION: Checking file {session_file}')
-            print(f'🧠 LOAD_SESSION: File exists? {session_file.exists()}')
+            print(f'LOAD_SESSION: Checking file {session_file}')
+            print(f'LOAD_SESSION: File exists? {session_file.exists()}')
             
             if session_file.exists():
                 with open(session_file, 'r') as f:
@@ -446,7 +446,7 @@ class ConversationMemory:
                 # Restore turns to short-term memory
                 turns = []
                 turns_data = session_data.get("turns", [])
-                print(f'🧠 LOAD_SESSION: Found {len(turns_data)} turns in file')
+                print(f'LOAD_SESSION: Found {len(turns_data)} turns in file')
                 
                 for turn_data in turns_data:
                     try:
@@ -468,7 +468,7 @@ class ConversationMemory:
                         continue
                 
                 self.short_term[session_id] = turns
-                print(f'🧠 LOAD_SESSION: Loaded {len(turns)} turns into short_term[{session_id}]')
+                print(f'LOAD_SESSION: Loaded {len(turns)} turns into short_term[{session_id}]')
                 
                 # Restore episodic memory
                 episodic = session_data.get("episodic_summary", {})
@@ -476,7 +476,7 @@ class ConversationMemory:
                 
                 logger.info(f"Loaded session {session_id} with {len(turns)} turns")
             else:
-                print(f'🧠 LOAD_SESSION: File does not exist, initializing empty session')
+                print(f'LOAD_SESSION: File does not exist, initializing empty session')
                 # Initialize empty session
                 self.short_term[session_id] = []
                 self.episodic[session_id] = {

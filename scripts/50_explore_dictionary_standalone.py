@@ -58,11 +58,11 @@ def explore_dictionary_table():
             print(f"\n✅ Dictionary table has {len(structure_df)} columns:")
             print(structure_df.to_string(index=False))
         else:
-            print("❌ Could not retrieve table structure - table may not exist or no access")
+            print("Could not retrieve table structure - table may not exist or no access")
             return None
             
         # Now let's get sample data from the dictionary table
-        print("\n📊 Getting sample data from dictionary table...")
+        print("\nGetting sample data from dictionary table...")
         
         sample_query = """
         SELECT * FROM (
@@ -110,12 +110,12 @@ def explore_dictionary_table():
         stats_df = pd.read_sql(stats_query, conn)
         
         if not stats_df.empty:
-            print(f"\n📊 Dictionary Table Statistics:")
+            print(f"\nDictionary Table Statistics:")
             for col in stats_df.columns:
                 print(f"  {col}: {stats_df[col].iloc[0]}")
         
         # Get sample of AML-specific columns
-        print("\n🎯 Getting AML-specific columns sample...")
+        print("\nGetting AML-specific columns sample...")
         
         aml_query = """
         SELECT * FROM (
@@ -134,11 +134,11 @@ def explore_dictionary_table():
         aml_df = pd.read_sql(aml_query, conn)
         
         if not aml_df.empty:
-            print(f"\n✅ Sample AML-specific columns:")
+            print(f"\nSample AML-specific columns:")
             print(aml_df.to_string(index=False))
         
         # Save sample data to CSV for analysis
-        print("\n💾 Saving sample dictionary data to CSV...")
+        print("\nSaving sample dictionary data to CSV...")
         
         full_query = """
         SELECT * FROM (
@@ -200,13 +200,13 @@ def analyze_table_coverage(df):
     table_analysis['AML_Percentage'] = (table_analysis['AML_Columns'] / table_analysis['Total_Columns'] * 100).round(1)
     table_analysis = table_analysis.sort_values('AML_Columns', ascending=False)
     
-    print(f"\n📊 Top 10 tables by AML column count:")
+    print(f"\nTop 10 tables by AML column count:")
     print(table_analysis.head(10).to_string())
     
     # Find tables with specific keywords
     aml_tables = table_analysis[table_analysis.index.str.contains('AML|CUSTOMER|TRANSACTION|RISK', case=False, na=False)]
     if not aml_tables.empty:
-        print(f"\n🎯 AML-related tables (by name):")
+        print(f"\nAML-related tables (by name):")
         print(aml_tables.to_string())
 
 if __name__ == "__main__":

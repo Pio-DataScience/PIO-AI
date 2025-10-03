@@ -45,13 +45,13 @@ try:
     from services.agents.modern_orchestrator import ModernAgentOrchestrator
     from services.agents.observability import get_observability
     from services.storage.parquet_layer import ParquetDataLayer
-    from services.ingest.dictionary_ingester import DictionaryIngester
+    from services.ingest.dictionary_ingester import OracleDictionaryIngester as DictionaryIngester
     
-    print("✅ Production-ready packages imported successfully")
-    print(f"✅ LangGraph Agent Support: {LANGGRAPH_AVAILABLE}")
+    print("Production-ready packages imported successfully")
+    print(f"LangGraph Agent Support: {LANGGRAPH_AVAILABLE}")
     
 except ImportError as e:
-    print(f"❌ Import error: {e}")
+    print(f"Import error: {e}")
     print("📝 Some production features may be unavailable")
     # Fallback for basic functionality
     from fastapi import FastAPI, HTTPException, Request
@@ -140,7 +140,7 @@ class SystemAudit:
             self.phase_success[phase_name] = success
             self.phase_details[phase_name] = details
             
-            status = "✅" if success else "❌"
+            status = "SUCCESS" if success else "FAILED"
             audit_logger.info(f"{status} {phase_name} completed in {duration:.3f}s - {details}")
         
     def get_audit_summary(self) -> Dict[str, Any]:
@@ -175,9 +175,9 @@ class AMLWebChatBot:
         try:
             from services.llm.provider import LLMManager
             self.llm_manager = LLMManager()
-            print("✅ LLM Manager initialized")
+            print("LLM Manager initialized")
         except Exception as e:
-            print(f"⚠️ LLM Manager initialization failed: {e}")
+            print(f"Warning: LLM Manager initialization failed: {e}")
             self.llm_manager = None
         
         self.audit = SystemAudit()
@@ -321,22 +321,22 @@ class AMLWebChatBot:
         
         # Add detailed system diagnostics
         self.audit.start_phase("SYSTEM_DIAGNOSTICS")
-        print("\n📊 System Diagnostics Summary:")
+        print("\nSystem Diagnostics Summary:")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print(f"🧠 BGE Model: {self.embedding_dimension}D embeddings")
-        print(f"📚 Collections: {len(self.collections)} loaded")
+        print(f"BGE Model: {self.embedding_dimension}D embeddings")
+        print(f"Collections: {len(self.collections)} loaded")
         for name, details in zip(self.collections.keys(), collection_details):
             print(f"   • {details}")
-        print(f"🔍 Semantic Search: {'✅ Ready' if not dimension_issues else '❌ BLOCKED by dimension mismatch'}")
-        print(f"🤖 LLM Provider: {'✅ Available' if self.llm_manager else '❌ Not available'}")
+        print(f"Semantic Search: {'Ready' if not dimension_issues else 'BLOCKED by dimension mismatch'}")
+        print(f"LLM Provider: {'Available' if self.llm_manager else 'Not available'}")
         
         # Production components status
         if hasattr(self, 'observability') and self.observability:
-            print(f"📊 Observability: ✅ Enabled")
+            print(f"Observability: Enabled")
         if hasattr(self, 'performance_optimizer') and self.performance_optimizer:
-            print(f"⚡ Performance Optimization: ✅ Enabled")
+            print(f"Performance Optimization: Enabled")
         if hasattr(self, 'parquet_layer') and self.parquet_layer:
-            print(f"💾 Parquet Storage: ✅ Ready")
+            print(f"Parquet Storage: Ready")
         
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         self.audit.end_phase("SYSTEM_DIAGNOSTICS", True, f"Collections: {len(self.collections)}, Dimension issues: {len(dimension_issues)}")
@@ -363,10 +363,10 @@ class AMLWebChatBot:
                 # Initialize modern orchestrator
                 try:
                     self.modern_orchestrator = ModernAgentOrchestrator(modern_config)
-                    print("✅ Modern orchestrator initialized successfully")
+                    print("Modern orchestrator initialized successfully")
                 except Exception as orchestrator_error:
-                    print(f"❌ Modern orchestrator failed: {orchestrator_error}")
-                    print(f"🔧 Orchestrator traceback: {traceback.format_exc()}")
+                    print(f"Modern orchestrator failed: {orchestrator_error}")
+                    print(f"Orchestrator traceback: {traceback.format_exc()}")
                     self.modern_orchestrator = None
                 
                 # Keep legacy orchestrator as fallback
@@ -380,13 +380,13 @@ class AMLWebChatBot:
                         oracle_password=oracle_config['password']
                     )
                 
-                print("🚀 Modern agentic orchestrator initialized")
-                print("🤖 Legacy agent orchestrator available as fallback")
+                print("Modern agentic orchestrator initialized")
+                print("Legacy agent orchestrator available as fallback")
                 self.audit.end_phase("AGENT_INIT", True, "Modern orchestrator ready")
                 
             except Exception as e:
-                print(f"⚠️ Modern agent initialization failed: {e}")
-                print(f"🔧 Traceback: {traceback.format_exc()}")
+                print(f"Warning: Modern agent initialization failed: {e}")
+                print(f"Traceback: {traceback.format_exc()}")
                 self.audit.end_phase("AGENT_INIT", False, str(e))
                 # Fallback to legacy if available
                 self.modern_orchestrator = None
@@ -398,7 +398,7 @@ class AMLWebChatBot:
             primary_collection = self.collections.pop('aml_dictionary_metadata_bge')
             self.collections = {'aml_dictionary_metadata_bge': primary_collection, **self.collections}
         elif 'aml_dictionary_metadata' in self.collections:
-            print("⚠️ Using legacy dictionary metadata (dimension mismatch expected)")
+            print("Warning: Using legacy dictionary metadata (dimension mismatch expected)")
             # Move it to the front for priority searching
             primary_collection = self.collections.pop('aml_dictionary_metadata')
             self.collections = {'aml_dictionary_metadata': primary_collection, **self.collections}
@@ -407,7 +407,7 @@ class AMLWebChatBot:
         catalog_db_path = warehouse_path / "catalog.db"
         self.catalog_store = CatalogStore(str(catalog_db_path))
         
-        print("✅ Production Agentic RAG System initialized successfully!")
+        print("Production Agentic RAG System initialized successfully!")
     
     def _get_oracle_config(self) -> Optional[Dict[str, str]]:
         """Get Oracle database configuration from environment or config files."""
@@ -577,7 +577,7 @@ class AMLWebChatBot:
             
             # Fallback to legacy agentic system
             elif has_legacy:
-                print("🤖 Using legacy agentic orchestrator")
+                print("Using legacy agentic orchestrator")
                 if self.logger:
                     self.logger.info("chat_processing", "Using legacy agentic orchestrator", 
                                    session_id=session_id, turn_id=turn_id)
@@ -732,10 +732,10 @@ class AMLWebChatBot:
         elif any(pattern in message_lower for pattern in ["what can you do", "help", "what are you"]):
             return """I'm PIO AI, your intelligent AML database assistant! Here's what I can help you with:
 
-🔍 **Database Exploration**: Ask about table schemas, column information, and database structure
-📊 **Data Analysis**: Query data patterns, null values, record counts, and data quality
-💬 **Smart Conversations**: I remember our conversation context for follow-up questions
-🧠 **AML Expertise**: Help with compliance data, transaction monitoring, and risk assessment queries
+Database Exploration: Ask about table schemas, column information, and database structure
+Data Analysis: Query data patterns, null values, record counts, and data quality
+Smart Conversations: I remember our conversation context for follow-up questions
+AML Expertise: Help with compliance data, transaction monitoring, and risk assessment queries
 
 Try asking me things like:
 • "What tables contain customer information?"
@@ -829,9 +829,9 @@ EXPERT RESPONSE:"""
             response = None
             
             # Debug: Check LLM manager availability
-            audit_logger.info(f"🤖 LLM Manager available: {self.llm_manager is not None}")
+            audit_logger.info(f"LLM Manager available: {self.llm_manager is not None}")
             if self.llm_manager:
-                audit_logger.info(f"🔧 Available providers: {get_available_providers()}")
+                audit_logger.info(f"Available providers: {get_available_providers()}")
             
             # Try using LLM manager chat method
             if self.llm_manager:
@@ -845,21 +845,21 @@ EXPERT RESPONSE:"""
                     if hasattr(llm_response, 'content'):
                         response = llm_response.content
                         audit.end_phase("LLM_MANAGER_REQUEST", True, f"Response length: {len(response)} chars")
-                        audit_logger.info(f"📥 LLM Response received: {len(response)} characters")
+                        audit_logger.info(f"LLM Response received: {len(response)} characters")
                     else:
                         response = str(llm_response)
                         audit.end_phase("LLM_MANAGER_REQUEST", True, f"String response: {len(response)} chars")
-                        audit_logger.info(f"📥 LLM Response (string): {len(response)} characters")
+                        audit_logger.info(f"LLM Response (string): {len(response)} characters")
                         
                 except Exception as llm_error:
                     audit.end_phase("LLM_MANAGER_REQUEST", False, str(llm_error))
-                    audit_logger.error(f"❌ LLM Manager error: {llm_error}")
+                    audit_logger.error(f"LLM Manager error: {llm_error}")
                     response = None
             
             # Fallback to direct Cohere if LLM manager fails
             if not response:
                 audit.start_phase("COHERE_FALLBACK")
-                audit_logger.info("🔄 Trying direct Cohere Chat API fallback...")
+                audit_logger.info("Trying direct Cohere Chat API fallback...")
                 try:
                     import cohere
                     import os
@@ -876,13 +876,13 @@ EXPERT RESPONSE:"""
                         )
                         response = chat_response.text
                         audit.end_phase("COHERE_FALLBACK", True, f"Response length: {len(response)} chars")
-                        audit_logger.info(f"✅ Direct Cohere Chat response: {len(response)} characters")
+                        audit_logger.info(f"Direct Cohere Chat response: {len(response)} characters")
                     else:
                         audit.end_phase("COHERE_FALLBACK", False, "No API key")
                         response = None
                 except Exception as cohere_error:
                     audit.end_phase("COHERE_FALLBACK", False, str(cohere_error))
-                    audit_logger.error(f"❌ Cohere error: {cohere_error}")
+                    audit_logger.error(f"Cohere error: {cohere_error}")
                     response = None
             
             if response:
@@ -946,19 +946,19 @@ EXPERT RESPONSE:"""
             # Extract meaningful content description
             content = result['content'][:200]
             if 'COLUMN_NAME' in content.upper():
-                response_parts.append(f"   📊 **Purpose**: Database schema information containing column definitions and structure")
+                response_parts.append(f"   Purpose: Database schema information containing column definitions and structure")
             elif any(term in content.upper() for term in ['CUSTOMER', 'PARTY', 'CLIENT']):
-                response_parts.append(f"   👤 **Purpose**: Customer/party management and identification data")
+                response_parts.append(f"   Purpose: Customer/party management and identification data")
             elif any(term in content.upper() for term in ['TRANSACTION', 'PAYMENT']):
-                response_parts.append(f"   💰 **Purpose**: Transaction processing and financial data tracking")
+                response_parts.append(f"   Purpose: Transaction processing and financial data tracking")
             elif any(term in content.upper() for term in ['RISK', 'SCORE']):
-                response_parts.append(f"   📈 **Purpose**: Risk assessment and scoring mechanisms")
+                response_parts.append(f"   Purpose: Risk assessment and scoring mechanisms")
             else:
-                response_parts.append(f"   📋 **Content**: {content}...")
+                response_parts.append(f"   Content: {content}...")
             
             response_parts.append("")
         
-        response_parts.append("💡 **Next Steps**: Ask specific questions like:")
+        response_parts.append("Next Steps: Ask specific questions like:")
         response_parts.append("• 'What columns are in the [table_name] table?'")
         response_parts.append("• 'How is risk scoring calculated?'")
         response_parts.append("• 'What customer data is stored?'")
@@ -1222,7 +1222,7 @@ async def get_chat_interface():
         
         <div class="chat-messages" id="chatMessages">
             <div class="examples">
-                <h3>💡 Try asking about:</h3>
+                <h3>Try asking about:</h3>
                 <div class="example-buttons">
                     <button onclick="askExample('What customer information is available?')">Customer Info</button>
                     <button onclick="askExample('Show me transaction tables')">Transactions</button>
@@ -1262,7 +1262,7 @@ async def get_chat_interface():
                 const resultsDiv = document.createElement('div');
                 resultsDiv.className = 'search-results';
                 resultsDiv.innerHTML = `
-                    <strong>🔍 Found ${searchResults.length} relevant items:</strong><br>
+                    <strong>Found ${searchResults.length} relevant items:</strong><br>
                     ${searchResults.slice(0, 3).map(r => 
                         `• ${r.metadata.owner}.${r.metadata.table_name} (${(r.similarity * 100).toFixed(1)}% match)`
                     ).join('<br>')}

@@ -18,9 +18,9 @@ try:
     from sentence_transformers import SentenceTransformer
     from services.llm.provider import get_available_providers, llm_manager
     from services.db.catalog_store import CatalogStore
-    print("✅ Required packages imported successfully")
+    print("Required packages imported successfully")
 except ImportError as e:
-    print(f"❌ Import error: {e}")
+    print(f"Import error: {e}")
     sys.exit(1)
 
 class AMLChatBot:
@@ -35,12 +35,12 @@ class AMLChatBot:
         
     def initialize(self):
         """Initialize all components."""
-        print("🤖 Initializing AML Database Chat Bot...")
+        print("Initializing AML Database Chat Bot...")
         
         # Initialize BGE model
-        print("🧠 Loading BGE-large-en-v1.5 model...")
+        print("Loading BGE-large-en-v1.5 model...")
         self.bge_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
-        print(f"✅ BGE model loaded (dimension: {self.bge_model.get_sentence_embedding_dimension()})")
+        print(f"BGE model loaded (dimension: {self.bge_model.get_sentence_embedding_dimension()})")
         
         # Initialize ChromaDB
         warehouse_path = Path(__file__).parent / "warehouse"
@@ -60,7 +60,7 @@ class AMLChatBot:
             coll = self.chroma_client.get_collection(collection.name)
             if coll.count() > 0:
                 self.collections[collection.name] = coll
-                print(f"📊 Loaded collection '{collection.name}' with {coll.count()} embeddings")
+                print(f"Loaded collection '{collection.name}' with {coll.count()} embeddings")
         
         # Initialize catalog store
         catalog_db_path = warehouse_path / "catalog.db"
@@ -68,9 +68,9 @@ class AMLChatBot:
         
         # Check LLM providers
         providers = get_available_providers()
-        print(f"🤖 Available LLM providers: {providers}")
+        print(f"Available LLM providers: {providers}")
         
-        print("✅ AML Chat Bot initialized successfully!")
+        print("AML Chat Bot initialized successfully!")
         
     def semantic_search(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         """Perform semantic search across all collections."""
@@ -276,16 +276,16 @@ def main():
     
     while True:
         try:
-            user_input = input("\n🙋 You: ").strip()
+            user_input = input("\nYou: ").strip()
             
             if user_input.lower() in ['quit', 'exit', 'q']:
-                print("👋 Thank you for using the AML Database Chat! Goodbye!")
+                print("Thank you for using the AML Database Chat! Goodbye!")
                 break
             elif user_input.lower() == 'history':
                 chatbot.show_conversation_history()
                 continue
             elif user_input.lower() == 'help':
-                print("\n💡 Example questions you can ask:")
+                print("\nExample questions you can ask:")
                 for i, question in enumerate(example_questions, 1):
                     print(f"  {i}. {question}")
                 continue
@@ -294,19 +294,19 @@ def main():
                 continue
             
             # Process the question
-            print("\n🔍 Searching database...")
+            print("\nSearching database...")
             start_time = time.time()
             response = chatbot.chat(user_input)
             elapsed_time = time.time() - start_time
             
-            print(f"\n🤖 Assistant (took {elapsed_time:.1f}s):")
+            print(f"\nAssistant (took {elapsed_time:.1f}s):")
             print(response)
             
         except KeyboardInterrupt:
-            print("\n\n👋 Chat interrupted. Goodbye!")
+            print("\n\nChat interrupted. Goodbye!")
             break
         except Exception as e:
-            print(f"\n❌ Error: {e}")
+            print(f"\nError: {e}")
             print("Please try again with a different question.")
 
 if __name__ == "__main__":
