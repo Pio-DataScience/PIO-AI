@@ -75,6 +75,17 @@ class AnswerComposer:
                 print("DEBUG: No results, calling _compose_no_results_response")
                 return await self._compose_no_results_response(query, sql_query, schema_context)
             
+            # Check if this is a SQL-only response (SQL generated but not executed)
+            if results and len(results) == 1 and isinstance(results[0], dict) and results[0].get("type") == "sql_only":
+                print("DEBUG: SQL-only response detected, returning SQL to user")
+                sql_result = results[0]
+                return {
+                    "answer": f"{sql_result.get('message', 'Here is the SQL query:')}\n\n```sql\n{sql_result.get('sql', '')}\n```\n\n_Note: Connect to the Oracle database to execute this query and get results._",
+                    "response_type": "sql_only",
+                    "confidence": 0.8,
+                    "sql": sql_result.get('sql', '')
+                }
+            
             # Analyze query intent for appropriate response style
             print("DEBUG: Analyzing response type...")
             response_type = self._analyze_response_type(query, sql_query, results)
@@ -115,10 +126,26 @@ class AnswerComposer:
         
         print(f"DEBUG: _analyze_response_type - query: {query_lower}")
         
-        # Schema exploration (CHECK FIRST - most specific)
+        # Check if results contain schema information (columns/tables)
+        # This handles follow-up questions where the query text doesn't match schema keywords
+        # but the vector search returned schema metadata
+        if results and len(results) > 0:
+            # Check if majority of results are schema-related (columns or table summaries)
+            schema_result_count = sum(
+                1 for r in results 
+                if isinstance(r.get('metadata'), dict) and 
+                r['metadata'].get('entity_type') in ['column', 'table_summary', 'table']
+            )
+            
+            # If >50% of results are schema metadata, treat as schema query
+            if schema_result_count > len(results) * 0.5:
+                print(f"DEBUG: Detected SCHEMA query from results (found {schema_result_count}/{len(results)} schema items)")
+                return "schema"
+        
+        # Schema exploration (keyword-based detection)
         if any(phrase in query_lower for phrase in ["tell me about", "describe", "what is", "table structure", "table details", "schema"]) or \
            any(word in query_lower for word in ["columns", "structure", "details"]):
-            print("DEBUG: Detected SCHEMA query")
+            print("DEBUG: Detected SCHEMA query from keywords")
             return "schema"
         
         # Count queries (ONLY specific count requests)
@@ -317,8 +344,16 @@ class AnswerComposer:
         
         # Add ONLY the actual retrieved columns (no inference)
         actual_columns = []
+        
+        # Determine if we're showing a sample or complete list
+        is_sample = table_info["total_columns"] and table_info["total_columns"] > len(table_info["columns"])
+        
         if table_info["columns"]:
-            context_parts.append(f"\nACTUAL COLUMNS FOUND IN DATABASE ({len(table_info['columns'])} columns):")
+            if is_sample:
+                context_parts.append(f"\nSAMPLE OF KEY COLUMNS (showing {len(table_info['columns'])} of {table_info['total_columns']} total columns):")
+            else:
+                context_parts.append(f"\nCOLUMNS IN DATABASE ({len(table_info['columns'])} columns):")
+                
             for col in table_info["columns"]:
                 col_info = f"- {col['name']}"
                 if col.get('type') and col['type'] != 'Unknown':
@@ -332,15 +367,19 @@ class AnswerComposer:
         
         schema_context = "\n".join(context_parts)
         
-        # Create STRICT anti-hallucination prompt
         # Create STRICT anti-hallucination prompt with accurate column count
         column_count_statement = ""
+        sample_clarification = ""
+        
         if table_info["total_columns"]:
-            column_count_statement = f"This table contains {table_info['total_columns']} columns in total"
+            column_count_statement = f"The {table_info['name']} table contains exactly {table_info['total_columns']} columns in total"
             if table_info["aml_column_count"]:
-                column_count_statement += f" (with {table_info['aml_column_count']} columns required for AML compliance)"
+                column_count_statement += f", with {table_info['aml_column_count']} columns required for AML compliance"
+            
+            if is_sample:
+                sample_clarification = f"\n\nIMPORTANT: The {len(table_info['columns'])} columns listed above are a SAMPLE of the most relevant columns from the database. The table has {table_info['total_columns']} columns total, but only this sample is shown here."
         elif len(table_info["columns"]) > 0:
-            column_count_statement = f"Database shows at least {len(table_info['columns'])} columns (details shown below)"
+            column_count_statement = f"Database shows {len(table_info['columns'])} columns (complete list shown below)"
         else:
             column_count_statement = "Column structure information is available"
 
@@ -351,18 +390,16 @@ USER QUESTION: "{query}"
 FACTUAL TABLE INFORMATION FROM DATABASE:
 {schema_context}
 
-COLUMN COUNT ACCURACY: {column_count_statement}
+{column_count_statement}{sample_clarification}
 
 STRICT INSTRUCTIONS:
-1. Use ONLY the column names explicitly listed above - DO NOT mention any other columns
-2. Use ONLY the data types and descriptions provided - DO NOT infer additional details  
-3. If asked about columns not in the list, state "not found in available data"
-4. Use natural language but stick strictly to the facts provided
-5. Mention that this shows the columns found in the database dictionary
+1. State the TOTAL number of columns clearly: {table_info['total_columns']} columns{' (' + str(table_info['aml_column_count']) + ' AML required)' if table_info['aml_column_count'] else ''}
+2. If showing a sample, clearly say "Here are some of the key columns:" NOT "all columns" or "complete list"
+3. Use ONLY the column names explicitly listed above - DO NOT mention any other columns
+4. Use ONLY the data types and descriptions provided - DO NOT infer additional details
+5. Use natural language but stick strictly to the facts provided
 6. DO NOT use markdown, hashtags, or special formatting
-7. Be accurate about the total column count - use the exact number provided: {table_info['total_columns'] if table_info['total_columns'] else 'information available'}
-
-The columns listed above are the COMPLETE and ONLY columns you should reference.
+7. Be consistent about the total count vs sample count
 
 Answer:"""
 

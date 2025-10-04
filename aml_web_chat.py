@@ -47,6 +47,10 @@ try:
     from services.storage.parquet_layer import ParquetDataLayer
     from services.ingest.dictionary_ingester import OracleDictionaryIngester as DictionaryIngester
     
+    # Enhanced retrieval with query reformulation
+    from services.retriever.enhanced_semantic_search import EnhancedSemanticSearch
+    from services.agents.query_reformulator import IntelligentQueryReformulator
+    
     print("Production-ready packages imported successfully")
     print(f"LangGraph Agent Support: {LANGGRAPH_AVAILABLE}")
     
@@ -170,6 +174,10 @@ class AMLWebChatBot:
         self.parquet_layer = None
         self.dictionary_ingester = None
         self.logger = None
+        
+        # Enhanced retrieval components
+        self.enhanced_search = None  # EnhancedSemanticSearch instance
+        self.query_reformulator = None  # Standalone reformulator if needed
         
         # Initialize LLM manager safely
         try:
@@ -360,10 +368,14 @@ class AMLWebChatBot:
                     "db_config": self._get_oracle_config() or {}
                 }
                 
-                # Initialize modern orchestrator
+                # Initialize modern orchestrator with shared resources for performance
                 try:
-                    self.modern_orchestrator = ModernAgentOrchestrator(modern_config)
-                    print("Modern orchestrator initialized successfully")
+                    self.modern_orchestrator = ModernAgentOrchestrator(
+                        modern_config,
+                        shared_bge_model=self.bge_model,  # Reuse pre-loaded BGE model
+                        shared_chroma_client=self.chroma_client  # Reuse ChromaDB client
+                    )
+                    print("Modern orchestrator initialized successfully (with shared BGE model)")
                 except Exception as orchestrator_error:
                     print(f"Modern orchestrator failed: {orchestrator_error}")
                     print(f"Orchestrator traceback: {traceback.format_exc()}")
@@ -392,16 +404,43 @@ class AMLWebChatBot:
                 self.modern_orchestrator = None
         
         # Prioritize the BGE-compatible dictionary metadata collection
+        primary_collection_name = None
         if 'aml_dictionary_metadata_bge' in self.collections:
             print("🎯 Using BGE-compatible dictionary metadata as primary source")
             # Move it to the front for priority searching
             primary_collection = self.collections.pop('aml_dictionary_metadata_bge')
             self.collections = {'aml_dictionary_metadata_bge': primary_collection, **self.collections}
+            primary_collection_name = 'aml_dictionary_metadata_bge'
         elif 'aml_dictionary_metadata' in self.collections:
             print("Warning: Using legacy dictionary metadata (dimension mismatch expected)")
             # Move it to the front for priority searching
             primary_collection = self.collections.pop('aml_dictionary_metadata')
             self.collections = {'aml_dictionary_metadata': primary_collection, **self.collections}
+            primary_collection_name = 'aml_dictionary_metadata'
+        elif 'aml_catalog' in self.collections:
+            primary_collection_name = 'aml_catalog'
+        
+        # Initialize enhanced semantic search with query reformulation
+        if primary_collection_name and self.bge_model and self.chroma_client and not dimension_issues:
+            self.audit.start_phase("ENHANCED_SEARCH_INIT")
+            try:
+                self.enhanced_search = EnhancedSemanticSearch(
+                    chroma_client=self.chroma_client,
+                    bge_model=self.bge_model,
+                    collection_name=primary_collection_name
+                )
+                print(f"🧠 Enhanced semantic search initialized with query reformulation")
+                print(f"   Primary collection: {primary_collection_name}")
+                print(f"   Features: Intent detection, complete metadata retrieval, conversation context")
+                self.audit.end_phase("ENHANCED_SEARCH_INIT", True, f"Collection: {primary_collection_name}")
+            except Exception as e:
+                print(f"Warning: Enhanced search initialization failed: {e}")
+                print(f"Falling back to standard semantic search")
+                self.enhanced_search = None
+                self.audit.end_phase("ENHANCED_SEARCH_INIT", False, str(e))
+        else:
+            print("ℹ️ Enhanced search disabled (dimension issues or missing components)")
+            self.enhanced_search = None
         
         # Initialize catalog store
         catalog_db_path = warehouse_path / "catalog.db"
@@ -451,16 +490,81 @@ class AMLWebChatBot:
             print(f"⚠️ Failed to load Oracle config: {e}")
             return None
         
-    def semantic_search(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
-        """Perform semantic search across all collections with performance tracking."""
+    def semantic_search(self, query: str, max_results: int = 5, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Perform intelligent semantic search with query reformulation.
+        
+        Uses enhanced search when available for:
+        - Query reformulation and intent detection
+        - Complete metadata retrieval (all columns, not just top-K)
+        - Conversation context tracking for follow-up questions
+        
+        Falls back to standard search if enhanced search unavailable.
+        """
         if self.logger:
             with self.logger.trace_operation("semantic_search", metadata={"query": query[:50], "max_results": max_results}) as perf:
-                return self._perform_semantic_search(query, max_results, perf)
+                return self._perform_semantic_search(query, max_results, session_id, perf)
         else:
-            return self._perform_semantic_search(query, max_results)
+            return self._perform_semantic_search(query, max_results, session_id)
     
-    def _perform_semantic_search(self, query: str, max_results: int = 5, perf=None) -> List[Dict[str, Any]]:
-        """Internal semantic search implementation."""
+    def _perform_semantic_search(self, query: str, max_results: int = 5, session_id: Optional[str] = None, perf=None) -> List[Dict[str, Any]]:
+        """
+        Internal semantic search implementation.
+        Routes to enhanced search when available, falls back to standard search.
+        """
+        # Try enhanced search first (with query reformulation)
+        if self.enhanced_search:
+            try:
+                if self.logger:
+                    self.logger.info("semantic_search", "Using enhanced search with query reformulation")
+                
+                # Perform enhanced search
+                results, retrieval_query = self.enhanced_search.search(
+                    query=query,
+                    max_results=max_results,
+                    session_id=session_id
+                )
+                
+                if perf:
+                    perf.checkpoint("enhanced_search_completed")
+                
+                # Log query reformulation details
+                if self.logger:
+                    self.logger.info(
+                        "query_reformulation",
+                        f"Original: '{query[:50]}...' -> Reformulated: '{retrieval_query.reformulated_query[:50]}...'",
+                        metadata={
+                            "intent": retrieval_query.intent.value,
+                            "table": retrieval_query.target_table,
+                            "complete_metadata": retrieval_query.should_retrieve_complete_metadata,
+                            "confidence": retrieval_query.confidence
+                        }
+                    )
+                
+                # Convert to standard format
+                formatted_results = []
+                for result in results:
+                    formatted_results.append({
+                        "content": result.get('document', ''),
+                        "similarity": 1.0 - result.get('distance', 0.0),
+                        "collection": self.enhanced_search.collection_name,
+                        "metadata": result.get('metadata', {}),
+                        "intent": retrieval_query.intent.value,
+                        "reformulated_query": retrieval_query.reformulated_query
+                    })
+                
+                if self.logger:
+                    self.logger.info("semantic_search", f"Enhanced search returned {len(formatted_results)} results")
+                
+                return formatted_results
+                
+            except Exception as e:
+                if self.logger:
+                    self.logger.error("enhanced_search", f"Enhanced search failed: {e}, falling back to standard search")
+                print(f"Warning: Enhanced search failed: {e}")
+                # Fall through to standard search
+        
+        # Standard search fallback
         all_results = []
         search_details = []
         
@@ -468,6 +572,9 @@ class AMLWebChatBot:
             if self.logger:
                 self.logger.warning("semantic_search", "Missing model or collections")
             return []
+        
+        if self.logger:
+            self.logger.info("semantic_search", "Using standard search (no query reformulation)")
         
         # Generate BGE embedding for query with caching
         cache_manager = self.performance_optimizer.get_cache_manager() if self.performance_optimizer else None
@@ -670,8 +777,8 @@ class AMLWebChatBot:
                 confidence_score=1.0
             ).model_dump()
         
-        # Otherwise, perform database search and processing
-        search_results = self.semantic_search(message, max_results=5)
+        # Otherwise, perform database search and processing with session context
+        search_results = self.semantic_search(message, max_results=5, session_id=session_id)
         self._last_search_results = search_results  # Store for potential agent use
         
         if perf:

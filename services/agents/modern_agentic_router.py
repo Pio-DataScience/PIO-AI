@@ -181,34 +181,69 @@ class ModernAgenticRouter:
         
         logger.warning(f"LLM DEBUG: Starting LLM classification")
         
-        # Build context-aware prompt
+        # Build rich context-aware prompt with conversation history
         recent_turns = session_context.get("recent_turns", [])
         recent_entities = session_context.get("recent_entities", {})
+        recent_tables = session_context.get("recent_tables", [])
+        last_answer_summary = session_context.get("last_answer_summary", "")
+        episodic_summary = session_context.get("episodic_summary", "")
         
-        context_summary = ""
+        # Build structured conversation context
+        context_parts = []
+        
+        if episodic_summary:
+            context_parts.append(f"Session Summary: {episodic_summary}")
+        
+        if recent_tables:
+            context_parts.append(f"Recently Discussed Tables: {', '.join(recent_tables[-3:])}")
+        
+        if last_answer_summary:
+            context_parts.append(f"System's Last Response: {last_answer_summary}")
+        
         if recent_turns:
-            context_summary = f"Recent conversation: {'; '.join(recent_turns[-2:])}"
+            context_parts.append(f"Last 2 User Queries: {' | '.join(recent_turns[-2:])}")
         
-        classification_prompt = f"""You are an expert intent classifier for an AML database assistant. Analyze this user query and classify it precisely.
+        if recent_entities:
+            entities_str = ", ".join([f"{k}: {v}" for k, v in recent_entities.items() if v])
+            if entities_str:
+                context_parts.append(f"Entities Mentioned: {entities_str}")
+        
+        context_summary = "\n".join(context_parts) if context_parts else "No prior conversation"
+        
+        classification_prompt = f"""You are an expert intent classifier for an AML database assistant. Analyze this user query in context to understand their TRUE intent.
 
-QUERY: "{query}"
+CURRENT USER QUERY: "{query}"
 
-CONVERSATION CONTEXT: {context_summary}
-RECENT ENTITIES: {recent_entities}
+CONVERSATION HISTORY:
+{context_summary}
+
+CRITICAL CLASSIFICATION RULES:
+1. If user says "no", "wrong", "not that", "other ones" after a table description → They want DIFFERENT tables (schema intent for NEW table search)
+2. If user references "it", "that table", "those columns" → Follow-up about SAME entity (follow_up intent)
+3. If user asks clarifying questions about previously shown data → Follow-up intent
+4. If query mentions specific NEW table names → Schema intent for that table
+5. If query is conversational without database terms → Conversation intent
 
 INTENT CATEGORIES:
 - conversation: Small-talk, greetings, identity questions, capabilities inquiry
-- schema: Database structure, table/column information, relationships
+- schema: Database structure, table/column information, relationships (INCLUDES requests to find OTHER tables)
 - data_analysis: Data exploration, counts, null analysis, patterns
-- follow_up: Contextual continuation of previous discussion
+- follow_up: Contextual continuation about the SAME entity/table already discussed
 - general: Mixed or unclear database-related query
 - abuse: Harassment, toxicity, inappropriate content
 
 ENTITY TYPES TO EXTRACT:
-- tables: Database table names
+- tables: Database table names (extract NEW tables mentioned, or infer from "other tables" context)
 - columns: Column names mentioned
 - business: Business concepts (customer, transaction, risk, aml, compliance)
 - technical: Technical terms (sql, query, schema, index)
+
+EXAMPLES:
+- "what is pio_accounts about?" → schema (new table query)
+- "no its not their is another ones" (after PIO_ACCOUNTS) → schema (wants OTHER tables, not follow-up)
+- "tell me more about it" → follow_up (same table)
+- "what about the transactions table?" → schema (new table query)
+- "how many records?" → follow_up (if referring to recent table) OR data_analysis
 
 Respond in JSON format:
 {{
@@ -222,7 +257,7 @@ Respond in JSON format:
     }},
     "requires_tools": true/false,
     "context_carryover": [],
-    "reasoning": "Brief explanation"
+    "reasoning": "Brief explanation of why this intent was chosen"
 }}"""
 
         logger.warning(f"LLM DEBUG: Built classification prompt (length: {len(classification_prompt)})")
@@ -363,6 +398,7 @@ class ConversationMemory:
         # Extract recent entities and topics
         recent_entities = {}
         recent_queries = []
+        recent_tables = []
         
         for turn in recent_turns[-3:]:  # Last 3 turns
             recent_queries.append(turn.query)
@@ -370,15 +406,37 @@ class ConversationMemory:
                 if entity_type not in recent_entities:
                     recent_entities[entity_type] = []
                 recent_entities[entity_type].extend(entities)
+                
+                # Track tables specifically for conversation context
+                if entity_type == "tables" and entities:
+                    recent_tables.extend(entities)
         
         # Deduplicate and keep most recent
         for entity_type in recent_entities:
             recent_entities[entity_type] = list(dict.fromkeys(recent_entities[entity_type]))[-5:]
         
+        # Deduplicate recent tables and keep order
+        recent_tables = list(dict.fromkeys(recent_tables))
+        
+        # Get last answer summary (truncate if too long)
+        last_answer_summary = ""
+        if recent_turns:
+            last_turn = recent_turns[-1]
+            last_response = last_turn.response if hasattr(last_turn, 'response') else ""
+            # Truncate to first 200 chars for context (just need the gist)
+            if last_response:
+                last_answer_summary = last_response[:200] + ("..." if len(last_response) > 200 else "")
+        
+        # Get episodic summary
+        episodic_text = episodic_summary.get("summary", "")
+        
         return {
             "recent_turns": recent_queries,
             "recent_entities": recent_entities,
-            "session_summary": episodic_summary.get("summary", ""),
+            "recent_tables": recent_tables,  # NEW: List of recently discussed tables
+            "last_answer_summary": last_answer_summary,  # NEW: What system just said
+            "episodic_summary": episodic_text,  # NEW: Session summary
+            "session_summary": episodic_text,  # Keep for backward compatibility
             "active_topics": episodic_summary.get("active_topics", []),
             "user_preferences": episodic_summary.get("preferences", {}),
             "turn_count": len(recent_turns)

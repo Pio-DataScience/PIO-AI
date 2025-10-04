@@ -33,42 +33,77 @@ logger = logging.getLogger(__name__)
 
 
 class VectorOnlyRetriever:
-    """Pure vector-based retrieval using BGE embeddings and ChromaDB only."""
+    """
+    Pure vector-based retrieval with intelligent query reformulation.
+    Now uses EnhancedSemanticSearch for intent-aware retrieval.
+    """
     
-    def __init__(self):
-        """Initialize BGE model and ChromaDB client."""
-        self.bge_model = None
-        self.chroma_client = None
+    def __init__(self, bge_model=None, chroma_client=None):
+        """
+        Initialize with enhanced search capability.
+        
+        Args:
+            bge_model: Pre-loaded SentenceTransformer model (optional, for performance)
+            chroma_client: Pre-initialized ChromaDB client (optional, for performance)
+        """
+        self.bge_model = bge_model  # Use provided model or load new one
+        self.chroma_client = chroma_client  # Use provided client or create new one
         self.collections = {}
+        self.enhanced_search = None  # Will use enhanced search if available
         
         if VECTOR_AVAILABLE:
             try:
-                # Initialize BGE model (matching the model used to create embeddings)
-                logger.info("Loading BGE-large-en-v1.5 model...")
-                self.bge_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
-                logger.info(f"BGE model loaded (dimension: {self.bge_model.get_sentence_embedding_dimension()})")
+                # Initialize BGE model only if not provided
+                if self.bge_model is None:
+                    logger.info("Loading BGE-large-en-v1.5 model...")
+                    self.bge_model = SentenceTransformer('BAAI/bge-large-en-v1.5')
+                    logger.info(f"BGE model loaded (dimension: {self.bge_model.get_sentence_embedding_dimension()})")
+                else:
+                    logger.info(f"Using pre-loaded BGE model (dimension: {self.bge_model.get_sentence_embedding_dimension()})")
                 
-                # Initialize ChromaDB
-                warehouse_path = Path("warehouse")
-                chroma_path = warehouse_path / "vectors"
-                
-                self.chroma_client = chromadb.PersistentClient(
-                    path=str(chroma_path),
-                    settings=Settings(
-                        anonymized_telemetry=False,
-                        allow_reset=True
+                # Initialize ChromaDB only if not provided
+                if self.chroma_client is None:
+                    warehouse_path = Path("warehouse")
+                    chroma_path = warehouse_path / "vectors"
+                    
+                    self.chroma_client = chromadb.PersistentClient(
+                        path=str(chroma_path),
+                        settings=Settings(
+                            anonymized_telemetry=False,
+                            allow_reset=True
+                        )
                     )
-                )
+                    logger.info("ChromaDB client initialized")
+                else:
+                    logger.info("Using pre-initialized ChromaDB client")
                 
                 # Load available collections
                 collections = self.chroma_client.list_collections()
+                primary_collection = None
                 for collection in collections:
                     coll = self.chroma_client.get_collection(collection.name)
                     if coll.count() > 0:
                         self.collections[collection.name] = coll
                         logger.info(f"Loaded collection '{collection.name}' with {coll.count()} embeddings")
+                        # Prioritize BGE-compatible dictionary metadata
+                        if 'aml_dictionary_metadata_bge' in collection.name:
+                            primary_collection = collection.name
                 
                 logger.info(f"Vector retrieval initialized with {len(self.collections)} collections")
+                
+                # Initialize enhanced search for intelligent retrieval
+                if primary_collection and self.bge_model and self.chroma_client:
+                    try:
+                        from services.retriever.enhanced_semantic_search import EnhancedSemanticSearch
+                        self.enhanced_search = EnhancedSemanticSearch(
+                            chroma_client=self.chroma_client,
+                            bge_model=self.bge_model,
+                            collection_name=primary_collection
+                        )
+                        logger.info(f"🧠 VectorRetriever: Enhanced search enabled with query reformulation")
+                    except Exception as e:
+                        logger.warning(f"Enhanced search not available, using standard search: {e}")
+                        self.enhanced_search = None
                 
             except Exception as e:
                 logger.error(f"Failed to initialize vector retrieval: {e}")
@@ -77,13 +112,58 @@ class VectorOnlyRetriever:
         else:
             logger.warning("Vector libraries not available. Install: pip install chromadb sentence-transformers")
     
-    def semantic_search(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
-        """Perform semantic search using BGE embeddings across all collections."""
+    def semantic_search(self, query: str, max_results: int = 10, session_id: str = None) -> List[Dict[str, Any]]:
+        """
+        Perform intelligent semantic search with query reformulation.
+        Uses enhanced search when available for intent-aware retrieval.
+        """
         if not self.bge_model or not self.collections:
             logger.warning("Vector search not available")
             return []
         
+        # Try enhanced search first (with query reformulation)
+        if self.enhanced_search:
+            try:
+                logger.info(f"VectorRetriever: Using enhanced search with query reformulation")
+                
+                results, retrieval_query = self.enhanced_search.search(
+                    query=query,
+                    max_results=max_results,
+                    session_id=session_id
+                )
+                
+                logger.info(
+                    f"VectorRetriever: Query reformulated - "
+                    f"Original: '{query[:50]}...' -> "
+                    f"Reformulated: '{retrieval_query.reformulated_query[:50]}...' | "
+                    f"Intent: {retrieval_query.intent.value} | "
+                    f"Complete metadata: {retrieval_query.should_retrieve_complete_metadata}"
+                )
+                
+                # Convert to expected format
+                formatted_results = []
+                for result in results:
+                    formatted_results.append({
+                        'content': result.get('document', ''),
+                        'similarity_score': 1.0 - result.get('distance', 0.0),
+                        'collection': self.enhanced_search.collection_name,
+                        'metadata': result.get('metadata', {}),
+                        'source': 'vector_bge_enhanced',
+                        'intent': retrieval_query.intent.value,
+                        'reformulated_query': retrieval_query.reformulated_query
+                    })
+                
+                logger.info(f"VectorRetriever: Enhanced search returned {len(formatted_results)} results")
+                return formatted_results
+                
+            except Exception as e:
+                logger.error(f"VectorRetriever: Enhanced search failed: {e}, falling back to standard")
+                # Fall through to standard search
+        
+        # Standard search fallback
         try:
+            logger.info(f"VectorRetriever: Using standard search (no reformulation)")
+            
             # Generate BGE embedding for query
             query_embedding = self.bge_model.encode([query])[0].tolist()
             

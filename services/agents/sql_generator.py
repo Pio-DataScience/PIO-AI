@@ -86,7 +86,8 @@ class SQLGenerator:
         if not tables:
             return None
         
-        primary_table = tables[0]["table_name"]
+        # Handle both string table names and dict table objects
+        primary_table = tables[0] if isinstance(tables[0], str) else tables[0].get("table_name", "")
         
         # Count queries
         if any(word in query_lower for word in ["how many", "count", "number of"]):
@@ -157,12 +158,15 @@ Generate ONLY the SQL query, no explanations:"""
 
         try:
             if self.llm_provider:
-                sql_response = self.llm_provider.generate_response(
-                    query=sql_prompt,
-                    context="",
+                # Use chat method with proper message format
+                llm_response = self.llm_provider.chat(
+                    messages=[{"role": "user", "content": sql_prompt}],
                     max_tokens=500,
                     temperature=0.1  # Low temperature for deterministic SQL
                 )
+                
+                # Extract content from LLM response
+                sql_response = llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
                 
                 # Clean and validate the SQL
                 clean_sql = self._clean_sql_response(sql_response)
@@ -275,7 +279,8 @@ Columns:
                 "explanation": "Cannot generate SQL without schema"
             }
         
-        primary_table = tables[0]["table_name"]
+        # Handle both string table names and dict table objects
+        primary_table = tables[0] if isinstance(tables[0], str) else tables[0].get("table_name", "")
         
         # Simple fallback: count query
         fallback_sql = f"SELECT COUNT(*) as record_count FROM {primary_table}"

@@ -79,8 +79,10 @@ class ModernAgentOrchestrator:
     - Comprehensive observability and safety
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], shared_bge_model=None, shared_chroma_client=None):
         self.config = config
+        self.shared_bge_model = shared_bge_model  # Performance: reuse pre-loaded model
+        self.shared_chroma_client = shared_chroma_client  # Performance: reuse client
         
         # Initialize LLM manager instead of abstract provider
         from services.llm.provider import LLMManager
@@ -134,15 +136,15 @@ class ModernAgentOrchestrator:
         # Set entry point
         workflow.set_entry_point("route")
         
-        # Add routing logic
+        # Add routing logic - all data paths start with schema retrieval
         workflow.add_conditional_edges(
             "route",
             self._route_decision,
             {
                 "conversation": "conversation",
-                "schema_task": "schema_retrieve", 
-                "data_task": "schema_retrieve",
-                "follow_up": "schema_retrieve",
+                "schema_task": "schema_retrieve",  # Schema info → compose answer
+                "data_task": "schema_retrieve",  # Data queries → schema → SQL → execution
+                "follow_up": "schema_retrieve",  # Follow-ups → schema → decide path
                 "abuse": "conversation",
                 "error": "handle_error"
             }
@@ -151,12 +153,13 @@ class ModernAgentOrchestrator:
         # Conversation path
         workflow.add_edge("conversation", "save_memory")
         
-        # Data workflow with vector-only LLM responses (no SQL generation)
+        # Data workflow - check if SQL generation is needed or just schema answer
         workflow.add_conditional_edges(
             "schema_retrieve",
             self._check_retrieval_success,
             {
-                "success": "compose_answer",  # Direct to LLM response
+                "success": "compose_answer",  # Schema queries → Direct to LLM response
+                "needs_sql": "sql_generate",  # Data analysis → SQL generation
                 "empty_retry": "self_heal",
                 "error": "handle_error"
             }
@@ -574,10 +577,18 @@ class ModernAgentOrchestrator:
                 }
                 
                 from .langgraph_orchestrator import VectorOnlyRetriever
-                vector_retriever = VectorOnlyRetriever()
+                # Performance: Pass shared BGE model and ChromaDB client to avoid reloading
+                vector_retriever = VectorOnlyRetriever(
+                    bge_model=self.shared_bge_model,
+                    chroma_client=self.shared_chroma_client
+                )
                 
-                # Search for schema information in vector database
-                vector_results = vector_retriever.semantic_search(query, max_results=10)
+                # Search for schema information in vector database with session context
+                vector_results = vector_retriever.semantic_search(
+                    query, 
+                    max_results=10,
+                    session_id=state.get("session_id")  # Pass session for conversation context
+                )
                 
                 print(f"SCHEMA DEBUG: Vector search found {len(vector_results)} results")
                 
@@ -701,6 +712,59 @@ class ModernAgentOrchestrator:
             schema_context = state["schema_retrieved"]
             classification = state["intent_classification"]
             
+            # ENRICH: If we only have table names (from vector search), build full schema from vector results
+            if schema_context.get("tables") and isinstance(schema_context["tables"][0], str):
+                print(f"SQL GENERATOR: Building schema from vector results for {len(schema_context['tables'])} tables")
+                
+                # Group vector results by table
+                table_schemas = {}
+                for result in schema_context.get("vector_results", []):
+                    metadata = result.get("metadata", {})
+                    table_name = metadata.get("table_name", "")
+                    
+                    if not table_name:
+                        continue
+                        
+                    if table_name not in table_schemas:
+                        table_schemas[table_name] = {
+                            "table_name": table_name,
+                            "business_description": metadata.get("business_description", f"Table {table_name}"),
+                            "table_comment": metadata.get("table_comment", ""),
+                            "columns": [],
+                            "column_count": 0
+                        }
+                    
+                    # Add column if this result is a column
+                    if metadata.get("entity_type") == "column":
+                        column_info = {
+                            "column_name": metadata.get("column_name", ""),
+                            "data_type": metadata.get("data_type", ""),
+                            "nullable": metadata.get("nullable", "Y"),
+                            "business_description": metadata.get("business_description", ""),
+                            "column_comment": metadata.get("column_comment", ""),
+                            "is_pii": metadata.get("is_pii", False)
+                        }
+                        table_schemas[table_name]["columns"].append(column_info)
+                
+                # Convert to list and update column counts
+                enriched_tables = []
+                for table_name in schema_context["tables"][:3]:  # Limit to first 3 tables
+                    if table_name in table_schemas:
+                        schema = table_schemas[table_name]
+                        schema["column_count"] = len(schema["columns"])
+                        enriched_tables.append(schema)
+                    else:
+                        # Fallback: minimal schema
+                        enriched_tables.append({
+                            "table_name": table_name,
+                            "business_description": f"Table {table_name}",
+                            "columns": [],
+                            "column_count": 0
+                        })
+                
+                schema_context["tables"] = enriched_tables
+                print(f"SQL GENERATOR: Built {len(enriched_tables)} table schemas with columns")
+            
             # Generate SQL with enhanced context
             sql_result = await self.sql_generator.generate_sql(
                 query=state["query"],
@@ -816,23 +880,40 @@ class ModernAgentOrchestrator:
         """Compose natural language answer from SQL results or vector search."""
         state["execution_path"].append("compose_answer")
         try:
-            # For schema queries, use vector_results as results
-            results = state["sql_results"]
+            # PRIORITY: Use SQL results if query went through SQL path, otherwise use vector results
+            results = state.get("sql_results", [])
             schema_ctx = state.get("schema_retrieved", {})
-            # Always use vector_results if present and non-empty
-            if schema_ctx.get("vector_results"):
-                results = schema_ctx["vector_results"]
-                import pprint
-                debug_msg = f"DEBUG: Passing {len(results) if results else 0} results to compose_answer for schema query (vector_results present)"
-                print(debug_msg)
-                print(debug_msg)
+            
+            # Determine which results to use based on execution path
+            if "sql_execute" in state.get("execution_path", []):
+                # SQL path was taken - prefer SQL results
+                sql_query = state.get("sql_generated", "")
+                print(f"DEBUG COMPOSE: SQL was executed: '{sql_query}'")
                 if results:
-                    debug_first = f"DEBUG: First result: {pprint.pformat(results[0])}"
-                    print(debug_first)
-                    print(debug_first)
-                debug_ctx = f"DEBUG: Schema context: {pprint.pformat(schema_ctx)}"
-                print(debug_ctx)
-                print(debug_ctx)
+                    print(f"DEBUG COMPOSE: Using SQL results ({len(results)} rows) for answer composition")
+                else:
+                    # SQL returned no results - could be empty data or no DB connection
+                    print(f"DEBUG COMPOSE: SQL returned no results")
+                    print(f"DEBUG COMPOSE: SQL query was: {sql_query}")
+                    
+                    # If SQL was generated but returned nothing, inform the user
+                    if sql_query:
+                        # Return SQL + explanation instead of schema fallback
+                        print(f"DEBUG COMPOSE: Providing SQL query to user instead of executing")
+                        results = [{
+                            "type": "sql_only",
+                            "sql": sql_query,
+                            "message": "Database connection not available. Here is the SQL that would answer your question:",
+                            "intent": state.get("intent_classification").intent.value if state.get("intent_classification") else "data_analysis"
+                        }]
+                    else:
+                        # No SQL was generated, fallback to schema
+                        print(f"DEBUG COMPOSE: Falling back to schema metadata")
+                        results = schema_ctx.get("vector_results", [])
+            else:
+                # Schema-only path - use vector results
+                results = schema_ctx.get("vector_results", [])
+                print(f"DEBUG: Using schema vector results ({len(results)} items) for answer composition")
             # Use enhanced query if available, otherwise fall back to basic query
             query_to_use = state.get("enhanced_query", state["query"])
             print(f"DEBUG compose_answer: Using {'enhanced' if 'enhanced_query' in state else 'basic'} query")
@@ -1017,7 +1098,14 @@ Keep it concise and solution-oriented (3-4 sentences max)."""
         return state["route_decision"]
     
     def _check_retrieval_success(self, state: AgentState) -> str:
-        """Check if vector schema retrieval was successful."""
+        """
+        Check if vector schema retrieval was successful and determine next step.
+        Returns:
+            - "error": Schema retrieval failed
+            - "empty_retry": No results, retry
+            - "needs_sql": Data analysis query needs SQL generation + execution
+            - "success": Schema query, go to answer composition
+        """
         if state["errors"] and "Schema retrieval failed" in str(state["errors"]):
             return "error"
         elif not state["schema_retrieved"] or state["schema_retrieved"].get("total_results", 0) == 0:
@@ -1026,6 +1114,32 @@ Keep it concise and solution-oriented (3-4 sentences max)."""
             else:
                 return "error"
         else:
+            # Check if SQL generation is needed based on intent
+            classification = state.get("intent_classification")
+            if classification:
+                intent = classification.intent
+                
+                # Data analysis queries need SQL execution
+                if intent == IntentType.DATA_ANALYSIS:
+                    print(f"ROUTING: Data analysis query detected - routing to SQL generation")
+                    return "needs_sql"
+                
+                # Follow-up queries about data (not schema) also need SQL
+                # Check if user is asking for counts, primary keys, actual data
+                query_lower = state["query"].lower()
+                needs_sql_keywords = [
+                    "count", "how many", "number of", "total",
+                    "primary key", "foreign key", "constraint", "index",
+                    "select", "query", "data", "records", "rows",
+                    "show me", "get", "fetch", "retrieve"
+                ]
+                
+                if intent == IntentType.FOLLOW_UP and any(keyword in query_lower for keyword in needs_sql_keywords):
+                    print(f"ROUTING: Follow-up query needs SQL - routing to SQL generation")
+                    return "needs_sql"
+            
+            # Schema-only queries go straight to answer composition
+            print(f"ROUTING: Schema query - routing to answer composition")
             return "success"
     
     def _check_generation_success(self, state: AgentState) -> str:
